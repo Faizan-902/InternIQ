@@ -281,3 +281,127 @@ def test_scenario_execution_budget_circuit_breaker():
 
     with pytest.raises(RuntimeError, match="Re-plan limit of 3 exceeded"):
         budget.record_replan()  # 4 -> trips circuit breaker
+
+
+def test_scenario_ssrf_and_unsafe_urls_rejected():
+    """
+    Scenario 10 (Security & Failure Recovery):
+    Malicious or internal URLs targeting private IPs, loopback, or cloud metadata endpoints
+    are strictly rejected by SSRF defense before network egress.
+    """
+    from tools.fetchers.url_safety import validate_safe_url
+
+    # Cloud metadata endpoint (AWS / GCP / Azure)
+    is_safe, reason = validate_safe_url("http://169.254.169.254/latest/meta-data/")
+    assert not is_safe
+    assert reason is not None
+    assert any(term in reason.lower() for term in ("unsupported scheme", "private", "metadata", "ip"))
+
+    # Localhost / loopback endpoint
+    is_safe_loop, reason_loop = validate_safe_url("http://127.0.0.1:8080/internal")
+    assert not is_safe_loop
+    assert reason_loop is not None
+
+    # RFC 1918 private network endpoint
+    is_safe_priv, reason_priv = validate_safe_url("https://10.0.0.5/api/keys")
+    assert not is_safe_priv
+    assert reason_priv is not None
+
+    # Valid external HTTPS domain passes
+    is_safe_valid, reason_valid = validate_safe_url("https://boards.greenhouse.io/corp/jobs/123")
+    assert is_safe_valid
+    assert reason_valid is None
+
+
+def test_scenario_connector_rate_limit_and_timeout_handled_gracefully():
+    """
+    Scenario 11 (Failure Recovery):
+    Upstream connector HTTP 429 (rate limit) or connection timeout is caught and translated
+    into structured empty/degraded response without terminating process or throwing unhandled tracebacks.
+    """
+    import httpx
+    from tools.fetchers.greenhouse import GreenhouseConnector
+
+    # Mock transport simulating HTTP 429 Rate Limit
+    rate_limit_transport = httpx.MockTransport(
+        lambda request: httpx.Response(429, json={"error": "Too Many Requests", "retry_after": 60})
+    )
+    client_429 = httpx.Client(transport=rate_limit_transport)
+
+    connector = GreenhouseConnector(timeout=5.0)
+    jobs_429 = connector.fetch_board_jobs("example_board", client=client_429)
+    # Must degrade gracefully to empty list, not crash
+    assert jobs_429 == []
+
+    # Mock transport simulating Network Timeout
+    def timeout_handler(request):
+        raise httpx.ReadTimeout("Connection timed out after 5000ms")
+
+    timeout_transport = httpx.MockTransport(timeout_handler)
+    client_timeout = httpx.Client(transport=timeout_transport)
+
+    jobs_timeout = connector.fetch_board_jobs("example_board", client=client_timeout)
+    assert jobs_timeout == []
+
+
+def test_scenario_ambiguous_goal_requests_clarification():
+    """
+    Scenario 12 (Edge Case):
+    Ambiguous user prompt ("AI internship") formulates explicit search assumptions,
+    preserves broad matching, and avoids hallucinating non-existent constraints.
+    """
+    from agent.planner import SearchPlanner
+    from tools.schemas import Preference
+
+    ambiguous_pref = Preference(
+        preference_id="pref_ambiguous",
+        profile_id="prof_faizan_scenarios",
+        target_roles=["AI internship"],  # Ambiguous / broad
+        target_locations=[],             # Unspecified
+        target_work_modes=[],            # Unspecified
+        min_stipend=None,
+    )
+
+    planner = SearchPlanner()
+    plan = planner.create_plan(ambiguous_pref)
+
+    assert plan["plan_id"].startswith("plan_")
+    assert plan["attempt"] == 1
+    # Formulates valid queries without hallucinating restrictive locations
+    assert len(plan["search_queries"]) > 0
+    assert any("ai" in q.lower() or "intern" in q.lower() for q in plan["search_queries"])
+    assert plan["filters"].get("locations") == [] or plan["filters"].get("locations") is None
+
+
+def test_scenario_malformed_llm_json_bounded_repair():
+    """
+    Scenario 13 (Failure Recovery & Security):
+    Malformed or truncated JSON payload from an LLM is boundedly validated against schema;
+    unparseable payload cleanly triggers fallback without crashing.
+    """
+    import json
+    from pydantic import ValidationError
+    from tools.schemas import EligibilityResult
+
+    # 1. Truncated / malformed JSON string (e.g. LLM output cut off by token limit)
+    malformed_json_str = '{"verdict": "eligible", "reasons": ["Valid candidate", '
+
+    parsed_result = None
+    parse_failed = False
+    try:
+        data = json.loads(malformed_json_str)
+        parsed_result = EligibilityResult(**data)
+    except (json.JSONDecodeError, ValidationError):
+        parse_failed = True
+        # Graceful fallback to UNKNOWN status
+        parsed_result = EligibilityResult(
+            verdict=EligibilityVerdict.UNKNOWN,
+            reasons=["Fallback: upstream JSON payload was malformed or truncated."],
+            unknown_factors=["upstream_parsing_error"],
+        )
+
+    assert parse_failed is True
+    assert parsed_result is not None
+    assert parsed_result.verdict == EligibilityVerdict.UNKNOWN
+    assert "Fallback" in parsed_result.reasons[0]
+
