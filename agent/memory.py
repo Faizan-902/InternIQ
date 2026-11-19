@@ -9,8 +9,9 @@ Implements Section 7.1 & Table 6 of InternIQ Technical Report:
 3. Run Working State: Short-lived intermediate plan, observations, and scratchpad variables.
 """
 
-from typing import Dict, Any, List, Optional
-from tools.schemas import Profile, Preference, Listing, TrackerEventType
+from typing import Any
+
+from tools.schemas import Preference, Profile, TrackerEventType
 from tools.tracker import ApplicationTracker
 
 
@@ -25,7 +26,7 @@ class AgentMemoryManager:
     def __init__(
         self,
         db_path: str = "interniq.db",
-        tracker: Optional[ApplicationTracker] = None,
+        tracker: ApplicationTracker | None = None,
     ):
         """
         Initializes the memory manager with dependency-injected ApplicationTracker.
@@ -33,16 +34,16 @@ class AgentMemoryManager:
         self.tracker: ApplicationTracker = (
             tracker if tracker is not None else ApplicationTracker(db_path=db_path)
         )
-        self.profile_memory: Optional[Profile] = None
-        self.preference_memory: Optional[Preference] = None
-        self.episodic_history: List[Dict[str, Any]] = []
-        self.run_scratchpad: Dict[str, Any] = {}
+        self.profile_memory: Profile | None = None
+        self.preference_memory: Preference | None = None
+        self.episodic_history: list[dict[str, Any]] = []
+        self.run_scratchpad: dict[str, Any] = {}
 
     # =========================================================================
     # Layer 1: Profile Memory
     # =========================================================================
 
-    def load_profile(self, profile_id: str) -> Optional[Profile]:
+    def load_profile(self, profile_id: str) -> Profile | None:
         """
         Loads a candidate profile from the SQLite persistent database by profile_id.
         Updates the in-memory cache and returns the reconstructed Profile.
@@ -65,7 +66,7 @@ class AgentMemoryManager:
         if persist and self.tracker is not None:
             self.tracker.save_profile(profile)
 
-    def get_profile(self) -> Optional[Profile]:
+    def get_profile(self) -> Profile | None:
         """Returns the currently active candidate profile from memory."""
         return self.profile_memory
 
@@ -77,7 +78,7 @@ class AgentMemoryManager:
             )
         self.preference_memory = preference
 
-    def get_preference(self) -> Optional[Preference]:
+    def get_preference(self) -> Preference | None:
         """Returns the currently active candidate preference from memory."""
         return self.preference_memory
 
@@ -86,7 +87,7 @@ class AgentMemoryManager:
     # =========================================================================
 
     def record_feedback(
-        self, opportunity_id: str, label: str, reason: Optional[str] = None
+        self, opportunity_id: str, label: str, reason: str | None = None
     ) -> str:
         """
         Stores candidate ranking feedback (e.g., 'good_match', 'irrelevant')
@@ -109,13 +110,13 @@ class AgentMemoryManager:
         )
         return feedback_id
 
-    def get_past_application_ids(self) -> List[str]:
+    def get_past_application_ids(self) -> list[str]:
         """
         Retrieves the unique opportunity IDs for which the student has recorded
         an 'applied' lifecycle event, preventing redundant recommendations.
         """
         events = self.tracker.get_events()
-        applied_ids: List[str] = []
+        applied_ids: list[str] = []
         seen = set()
 
         for ev in events:
@@ -132,7 +133,7 @@ class AgentMemoryManager:
 
         return applied_ids
 
-    def record_episode(self, episode: Dict[str, Any]) -> None:
+    def record_episode(self, episode: dict[str, Any]) -> None:
         """
         Records an episodic execution event or intermediate search summary.
         Preserves backward compatibility with the existing skeleton.

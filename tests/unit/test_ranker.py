@@ -3,17 +3,18 @@ Unit Tests for Hybrid Matching & Transparent Ranking Engine
 Owner: Mohd Faizan Khan (Team HumanBot)
 """
 
-import pytest
 from datetime import date
-from tools.schemas import Listing, Profile, Education, Preference, WorkMode
+
+import pytest
+
 from tools.ranker import (
-    calculate_skills_factor,
-    calculate_preference_factor,
     calculate_deadline_factor,
-    score_opportunity,
+    calculate_preference_factor,
+    calculate_skills_factor,
     rank_opportunities,
-    DEFAULT_WEIGHTS,
+    score_opportunity,
 )
+from tools.schemas import Education, Listing, Preference, Profile, WorkMode
 
 
 @pytest.fixture

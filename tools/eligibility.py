@@ -11,19 +11,19 @@ Implements FR-05 and Table 5 / Section 7.3 specifications:
 - Produces auditable EligibilityResult with explicit reasons, evidence, and disqualifiers.
 """
 
-from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from datetime import date, datetime
+
 from tools.schemas import (
-    Listing,
-    Profile,
-    Preference,
     EligibilityResult,
     EligibilityVerdict,
+    Listing,
+    Preference,
+    Profile,
     WorkMode,
 )
 
 
-def _parse_iso_date(date_str: Optional[str]) -> Optional[date]:
+def _parse_iso_date(date_str: str | None) -> date | None:
     """Safely parse YYYY-MM-DD or ISO format string to date."""
     if not date_str:
         return None
@@ -53,7 +53,7 @@ def _extract_core_branch_terms(branch_str: str) -> set[str]:
     return core or set(tokens)
 
 
-def _check_branch_match(req_branch: str, student_branches: List[str], student_degrees: List[str]) -> bool:
+def _check_branch_match(req_branch: str, student_branches: list[str], student_degrees: list[str]) -> bool:
     norm_req = _normalize_string(req_branch)
     if norm_req in ("any", "all", "open", "any branch", "any discipline", "all branches"):
         return True
@@ -82,8 +82,8 @@ def _check_branch_match(req_branch: str, student_branches: List[str], student_de
 def check_eligibility(
     listing: Listing,
     profile: Profile,
-    preference: Optional[Preference] = None,
-    current_date: Optional[date] = None,
+    preference: Preference | None = None,
+    current_date: date | None = None,
 ) -> EligibilityResult:
     """
     Evaluates hard constraints deterministically against student profile.
@@ -97,10 +97,10 @@ def check_eligibility(
     if current_date is None:
         current_date = datetime.utcnow().date()
 
-    reasons: List[str] = []
-    evidence: List[str] = []
-    disqualifiers: List[str] = []
-    unknown_factors: List[str] = []
+    reasons: list[str] = []
+    evidence: list[str] = []
+    disqualifiers: list[str] = []
+    unknown_factors: list[str] = []
 
     # 1. Deadline Expiration Check
     deadline_date = _parse_iso_date(listing.deadline)

@@ -12,9 +12,11 @@ Implements Section 5.2 (Node 2: Plan), Section 7.1, and FR-03:
 import copy
 import re
 import uuid
-from typing import List, Dict, Any, Optional, Union
+from typing import Any
+
 from pydantic import BaseModel, Field
-from tools.schemas import Preference, Profile, WorkMode, Listing
+
+from tools.schemas import Listing, Preference, Profile, WorkMode
 
 # Tools that are valuable on a resume but poor as standalone job search titles
 # e.g., "Python Intern" is a great query, but "Git Intern" or "Linux Intern" is not.
@@ -30,19 +32,19 @@ class SearchPlan(BaseModel):
     """
     plan_id: str = Field(..., description="Unique search plan identifier")
     attempt: int = Field(1, ge=1, le=4, description="Plan iteration attempt (1 to 4: 1 initial + up to 3 replans)")
-    target_sources: List[str] = Field(
+    target_sources: list[str] = Field(
         default_factory=lambda: ["greenhouse", "lever", "manual_csv"],
         description="Target job boards and authorized connectors",
     )
-    query_keywords: List[str] = Field(
+    query_keywords: list[str] = Field(
         default_factory=list,
         description="Atomic keywords (roles, skills, domains)",
     )
-    search_queries: List[str] = Field(
+    search_queries: list[str] = Field(
         default_factory=list,
         description="Constructed query strings formatted for search APIs",
     )
-    filters: Dict[str, Any] = Field(
+    filters: dict[str, Any] = Field(
         default_factory=dict,
         description="Search constraints (locations, work modes, stipend, graduation years)",
     )
@@ -50,7 +52,7 @@ class SearchPlan(BaseModel):
         False,
         description="Whether constraints were relaxed for fallback discovery",
     )
-    relaxation_notes: List[str] = Field(
+    relaxation_notes: list[str] = Field(
         default_factory=list,
         description="Audit trail of constraint relaxation steps across attempts",
     )
@@ -75,7 +77,7 @@ class ObservationEvaluation(BaseModel):
         ge=0,
         description="Number of observations satisfying role, domain, location, and work mode criteria",
     )
-    reasons: List[str] = Field(
+    reasons: list[str] = Field(
         default_factory=list,
         description="Itemized explanations for insufficiency or limitations",
     )
@@ -87,7 +89,7 @@ class ObservationEvaluation(BaseModel):
         ...,
         description="Whether another search iteration or query re-planning is recommended",
     )
-    relevant_listing_ids: List[str] = Field(
+    relevant_listing_ids: list[str] = Field(
         default_factory=list,
         description="Listing IDs of opportunities meeting relevance criteria",
     )
@@ -134,8 +136,8 @@ class SearchPlanner:
     grounded in the student's confirmed profile and target preferences.
     """
 
-    def __init__(self, default_sources: Optional[List[str]] = None):
-        self.default_sources: List[str] = (
+    def __init__(self, default_sources: list[str] | None = None):
+        self.default_sources: list[str] = (
             list(default_sources)
             if default_sources is not None
             else ["greenhouse", "lever", "manual_csv"]
@@ -144,13 +146,13 @@ class SearchPlanner:
     def _extract_keywords(
         self,
         preference: Preference,
-        profile: Optional[Profile] = None,
-    ) -> List[str]:
+        profile: Profile | None = None,
+    ) -> list[str]:
         """
         Extracts high-signal deduplicated keywords from target roles, domains, and top profile skills.
         Safely handles empty, None, or whitespace-only inputs.
         """
-        keywords: List[str] = []
+        keywords: list[str] = []
         seen = set()
 
         def add_keyword(k: str):
@@ -180,15 +182,15 @@ class SearchPlanner:
 
     def _generate_queries(
         self,
-        roles: List[str],
-        domains: List[str],
-        skills: List[str],
-    ) -> List[str]:
+        roles: list[str],
+        domains: list[str],
+        skills: list[str],
+    ) -> list[str]:
         """
         Combines roles, domains, and technical skills into specific, non-redundant search queries.
         Filters out low-signal standalone tool queries (e.g., 'Git Intern').
         """
-        queries: List[str] = []
+        queries: list[str] = []
         seen = set()
 
         def add_query(q: str):
@@ -226,10 +228,10 @@ class SearchPlanner:
     def create_plan(
         self,
         preference: Preference,
-        attempt: Union[int, Profile] = 1,
-        profile: Optional[Profile] = None,
+        attempt: int | Profile = 1,
+        profile: Profile | None = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Creates a bounded, structured search plan with dynamic query formulation.
 
@@ -282,14 +284,14 @@ class SearchPlanner:
         ]
         locations = [loc.strip() for loc in (preference.locations or []) if loc and loc.strip()]
 
-        grad_years: List[int] = []
+        grad_years: list[int] = []
         if profile and profile.education:
             for edu in profile.education:
                 gy = getattr(edu, "graduation_year", None)
                 if gy is not None and isinstance(gy, int):
                     grad_years.append(gy)
 
-        filters: Dict[str, Any] = {
+        filters: dict[str, Any] = {
             "locations": locations,
             "work_modes": work_modes,
             "min_stipend": preference.min_stipend,
@@ -310,7 +312,7 @@ class SearchPlanner:
 
         return plan.model_dump()
 
-    def _normalize_listing(self, item: Any) -> Optional[Dict[str, Any]]:
+    def _normalize_listing(self, item: Any) -> dict[str, Any] | None:
         """
         Safely extracts and validates fields from a Listing model instance, raw dict, or duck-typed object.
         Returns None if essential fields (title, listing_id) are missing or blank.
@@ -385,8 +387,8 @@ class SearchPlanner:
             }
 
         if hasattr(item, "title") and hasattr(item, "listing_id"):
-            listing_id = str(getattr(item, "listing_id") or "").strip()
-            title = str(getattr(item, "title") or "").strip()
+            listing_id = str(item.listing_id or "").strip()
+            title = str(item.title or "").strip()
             if not listing_id or not title:
                 return None
             return {
@@ -401,7 +403,7 @@ class SearchPlanner:
 
         return None
 
-    def _matches_role(self, title: str, description: str, target_roles: List[str]) -> bool:
+    def _matches_role(self, title: str, description: str, target_roles: list[str]) -> bool:
         """
         Evaluates whether a listing matches any of the target roles.
         If no target roles are specified, all usable roles match.
@@ -445,8 +447,8 @@ class SearchPlanner:
         self,
         title: str,
         description: str,
-        skills: List[str],
-        domains: List[str],
+        skills: list[str],
+        domains: list[str],
     ) -> bool:
         """
         Evaluates whether a listing matches any preferred domain.
@@ -497,10 +499,10 @@ class SearchPlanner:
 
     def _matches_location(
         self,
-        listing_locations: List[str],
+        listing_locations: list[str],
         listing_work_mode: Any,
-        pref_locations: List[str],
-        pref_work_modes: List[Any],
+        pref_locations: list[str],
+        pref_work_modes: list[Any],
     ) -> bool:
         """
         Evaluates whether a listing satisfies candidate location or work mode preferences.
@@ -550,9 +552,9 @@ class SearchPlanner:
 
     def evaluate_observations(
         self,
-        observations: Optional[List[Union[Listing, Dict[str, Any]]]],
+        observations: list[Listing | dict[str, Any]] | None,
         preference: Preference,
-        profile: Optional[Profile] = None,
+        profile: Profile | None = None,
         attempt: int = 1,
         min_sufficient_count: int = 3,
         **kwargs: Any,
@@ -586,7 +588,7 @@ class SearchPlanner:
             int_attempt = 1
         clamped_attempt = max(1, min(int_attempt, 4))
 
-        raw_items: List[Any]
+        raw_items: list[Any]
         if observations is None:
             raw_items = []
         elif isinstance(observations, (list, tuple)):
@@ -631,7 +633,7 @@ class SearchPlanner:
         domain_match_count = 0
         location_match_count = 0
         relevant_observations = 0
-        relevant_listing_ids: List[str] = []
+        relevant_listing_ids: list[str] = []
 
         for item in raw_items:
             norm = self._normalize_listing(item)
@@ -668,7 +670,7 @@ class SearchPlanner:
         is_sufficient = (relevant_observations >= min_sufficient_count)
         budget_exhausted = (clamped_attempt >= 4)
 
-        reasons: List[str] = []
+        reasons: list[str] = []
         if unusable_count > 0:
             reasons.append(
                 f"{unusable_count} listing(s) were unusable or malformed (missing title or listing ID)."
@@ -728,7 +730,7 @@ class SearchPlanner:
         self,
         observation: Any,
         preference: Preference,
-        profile: Optional[Profile] = None,
+        profile: Profile | None = None,
         **kwargs: Any,
     ) -> ObservationEvaluation:
         """
@@ -744,12 +746,12 @@ class SearchPlanner:
 
     def replan(
         self,
-        current_plan: Union[SearchPlan, Dict[str, Any]],
+        current_plan: SearchPlan | dict[str, Any],
         evaluation: ObservationEvaluation,
         preference: Preference,
-        profile: Optional[Profile] = None,
+        profile: Profile | None = None,
         **kwargs: Any,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Generates a progressively broader search plan when observation evaluation
         diagnoses insufficient opportunities, respecting candidate preferences and

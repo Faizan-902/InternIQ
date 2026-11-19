@@ -15,10 +15,11 @@ Guarantees:
 
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+
 import httpx
-from tools.schemas import Listing, WorkMode
-from tools.fetchers.greenhouse import strip_html_tags, detect_work_mode
+
+from tools.fetchers.greenhouse import detect_work_mode, strip_html_tags
+from tools.schemas import Listing
 
 
 class LeverConnector:
@@ -33,9 +34,9 @@ class LeverConnector:
     def fetch_site_postings(
         self,
         site: str,
-        organization_name: Optional[str] = None,
-        client: Optional[httpx.Client] = None,
-    ) -> List[Listing]:
+        organization_name: str | None = None,
+        client: httpx.Client | None = None,
+    ) -> list[Listing]:
         """
         Fetches published postings from an employer's Lever site.
         """
@@ -57,7 +58,7 @@ class LeverConnector:
         if not isinstance(postings_data, list):
             return []
 
-        listings: List[Listing] = []
+        listings: list[Listing] = []
 
         for posting in postings_data:
             posting_id = str(posting.get("id", ""))
@@ -77,7 +78,7 @@ class LeverConnector:
             work_mode = detect_work_mode(f"{plain_desc} {commitment}", loc_name)
             canonical_url = posting.get("hostedUrl") or f"https://jobs.lever.co/{site}/{posting_id}"
 
-            content_hash = hashlib.sha256(f"{title}|{org}|{plain_desc[:200]}".encode("utf-8")).hexdigest()
+            content_hash = hashlib.sha256(f"{title}|{org}|{plain_desc[:200]}".encode()).hexdigest()
 
             listing = Listing(
                 listing_id=f"lever_{site}_{posting_id}",

@@ -3,9 +3,8 @@ Unit Tests for Scam-Signal Detection Engine
 Owner: Mohd Faizan Khan (Team HumanBot)
 """
 
-import pytest
-from tools.schemas import Listing, WorkMode, RiskSeverity
 from tools.scam_check import check_scam_signals
+from tools.schemas import Listing, RiskSeverity, WorkMode
 
 
 def test_clean_listing_no_flags():

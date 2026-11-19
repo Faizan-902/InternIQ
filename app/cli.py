@@ -6,8 +6,12 @@ ranking matches, generating verified drafts, and checking scam signals.
 
 import argparse
 import sys
-from tools.fetchers import import_csv
-from tools.schemas import Profile, Education, Skill, Preference, WorkMode
+from pathlib import Path
+
+# Ensure repository root is on sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def main():

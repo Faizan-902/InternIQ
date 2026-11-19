@@ -1,6 +1,6 @@
 # InternIQ Benchmark Evaluation Report
 
-**Evaluation Date:** 2026-11-15 14:21:31 UTC  
+**Evaluation Date:** 2026-11-19 17:11:34 UTC  
 **Evaluator:** Mohd Faizan Khan (Team HumanBot)  
 **Corpus Size:** 42 annotated opportunities (`eval/labelled_listings.csv`)  
 **Ranking Version:** `ranker_v1`  

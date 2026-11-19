@@ -5,16 +5,14 @@ Specification: Technical Report Section 6.2, Table 5, FR-02
 """
 
 import io
-import pytest
+
 import pypdf
+import pytest
+
 from tools.parser import (
-    parse_profile,
-    extract_raw_text,
-    extract_contact_info,
-    extract_education,
-    extract_skills,
-    extract_projects,
     MAX_RESUME_BYTES,
+    extract_raw_text,
+    parse_profile,
 )
 from tools.schemas import Profile
 

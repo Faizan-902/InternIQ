@@ -5,23 +5,22 @@ Specification: Technical Report Section 3.1, FR-09, Section 4.2
 """
 
 import json
-from datetime import datetime
+
+from tools.packet import (
+    build_application_packet,
+    export_packet_json,
+    export_packet_markdown,
+    export_packet_text,
+)
 from tools.schemas import (
-    Listing,
-    Profile,
-    Education,
-    Project,
-    EvidenceFact,
     ApplicationDraft,
     ClaimAudit,
     ClaimStatus,
+    Education,
+    Listing,
+    Profile,
+    Project,
     ScoreBreakdown,
-)
-from tools.packet import (
-    build_application_packet,
-    export_packet_markdown,
-    export_packet_json,
-    export_packet_text,
 )
 
 

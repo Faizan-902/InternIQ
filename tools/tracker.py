@@ -15,23 +15,22 @@ Tables:
 - audit_log: Verifiable security & data lifecycle audit trail
 """
 
-import sqlite3
 import json
+import sqlite3
 import uuid
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any
+
 from tools.schemas import (
-    TrackerEvent,
-    TrackerEventType,
-    Profile,
-    Listing,
     ApplicationDraft,
-    WorkMode,
-    Education,
-    Project,
-    EvidenceFact,
     ClaimAudit,
-    ClaimStatus,
+    Education,
+    EvidenceFact,
+    Listing,
+    Profile,
+    Project,
+    TrackerEvent,
+    WorkMode,
 )
 
 
@@ -186,7 +185,7 @@ class ApplicationTracker:
                 conn.rollback()
                 raise e
 
-    def get_events(self, opportunity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_events(self, opportunity_id: str | None = None) -> list[dict[str, Any]]:
         with self._get_connection() as conn:
             if opportunity_id:
                 cur = conn.execute(
@@ -234,7 +233,7 @@ class ApplicationTracker:
             conn.commit()
             return True
 
-    def get_profile(self, profile_id: str) -> Optional[Profile]:
+    def get_profile(self, profile_id: str) -> Profile | None:
         """Retrieves candidate Profile by ID."""
         with self._get_connection() as conn:
             cur = conn.execute("SELECT * FROM profiles WHERE profile_id = ?", (profile_id,))
@@ -302,7 +301,7 @@ class ApplicationTracker:
             conn.commit()
             return True
 
-    def get_opportunity(self, opportunity_id: str) -> Optional[Listing]:
+    def get_opportunity(self, opportunity_id: str) -> Listing | None:
         """Retrieves cached Listing snapshot by ID."""
         with self._get_connection() as conn:
             cur = conn.execute("SELECT * FROM opportunities WHERE opportunity_id = ?", (opportunity_id,))
@@ -311,7 +310,7 @@ class ApplicationTracker:
                 return None
             return self._row_to_listing(row)
 
-    def list_opportunities(self, source_id: Optional[str] = None) -> List[Listing]:
+    def list_opportunities(self, source_id: str | None = None) -> list[Listing]:
         """Lists cached opportunities, optionally filtered by source."""
         with self._get_connection() as conn:
             if source_id:
@@ -377,7 +376,7 @@ class ApplicationTracker:
             conn.commit()
             return True
 
-    def get_draft(self, draft_id: str) -> Optional[ApplicationDraft]:
+    def get_draft(self, draft_id: str) -> ApplicationDraft | None:
         """Retrieves draft by ID."""
         with self._get_connection() as conn:
             cur = conn.execute("SELECT * FROM drafts WHERE draft_id = ?", (draft_id,))
@@ -400,7 +399,7 @@ class ApplicationTracker:
     # Feedback & User Control
     # =========================================================================
 
-    def save_feedback(self, opportunity_id: str, label: str, reason: Optional[str] = None) -> str:
+    def save_feedback(self, opportunity_id: str, label: str, reason: str | None = None) -> str:
         """Stores candidate ranking feedback (e.g. good_match, irrelevant)."""
         fb_id = f"fb_{uuid.uuid4().hex[:8]}"
         with self._get_connection() as conn:
@@ -435,7 +434,7 @@ class ApplicationTracker:
             conn.commit()
             return deleted_events_count
 
-    def export_all_user_data(self) -> Dict[str, Any]:
+    def export_all_user_data(self) -> dict[str, Any]:
         """
         Data portability: Exports all local records as a structured JSON-serializable dictionary.
         """

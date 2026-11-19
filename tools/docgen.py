@@ -10,20 +10,20 @@ Implements FR-08, Section 6.2 Table 5, and Section 5.2 Node 7:
 - Rejects hallucinations and returns transparent claim audit trails for student review.
 """
 
-from typing import List, Optional
 from datetime import datetime
+
+from agent.verifier import ClaimVerifier
 from tools.schemas import (
-    Listing,
-    Profile,
     ApplicationDraft,
     ClaimStatus,
+    Listing,
+    Profile,
 )
-from agent.verifier import ClaimVerifier
 
 
-def _generate_raw_resume_bullets(listing: Listing, profile: Profile) -> List[str]:
+def _generate_raw_resume_bullets(listing: Listing, profile: Profile) -> list[str]:
     """Generates tailored bullet points strictly from confirmed candidate projects and skills."""
-    bullets: List[str] = []
+    bullets: list[str] = []
     
     # 1. Match candidate projects with listing skills
     req_skills_norm = {s.lower() for s in listing.required_skills}
@@ -77,7 +77,7 @@ def generate_application_draft(
     listing: Listing,
     profile: Profile,
     max_regeneration_attempts: int = 2,
-    adversarial_unsupported_text: Optional[str] = None,
+    adversarial_unsupported_text: str | None = None,
 ) -> ApplicationDraft:
     """
     Generates a role-specific application draft with automated claim-verification loop.

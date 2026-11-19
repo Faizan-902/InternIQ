@@ -16,15 +16,17 @@ Tests:
 10. Type validation and error handling
 """
 
+
 import pytest
-from agent.planner import SearchPlanner, SearchPlan, ObservationEvaluation
+
+from agent.planner import ObservationEvaluation, SearchPlan, SearchPlanner
 from tools.schemas import (
+    Education,
+    Listing,
     Preference,
     Profile,
-    Education,
     Project,
     WorkMode,
-    Listing,
 )
 
 
@@ -308,9 +310,9 @@ def _create_test_listing(
     listing_id: str,
     title: str,
     description: str = "Internship opportunity description",
-    locations: Optional[list] = None,
+    locations: list | None = None,
     work_mode: WorkMode = WorkMode.HYBRID,
-    required_skills: Optional[list] = None,
+    required_skills: list | None = None,
 ) -> Listing:
     return Listing(
         listing_id=listing_id,

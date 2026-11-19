@@ -14,28 +14,27 @@ Covers Milestone 3 Work Item 1:
 - Safe handling of unconfigured or failed search sources.
 """
 
-import pytest
-from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from tools.schemas import (
-    Profile,
-    Preference,
-    Education,
-    WorkMode,
-    Listing,
-)
-from agent.limits import ExecutionBudget
-from agent.planner import SearchPlanner, SearchPlan, ObservationEvaluation
+import pytest
+
 from agent.graph import (
     InternIQAgentState,
-    perceive_node,
-    route_after_perceive,
-    plan_node,
     act_node,
-    observe_node,
-    route_after_observe,
     build_search_loop_graph,
+    observe_node,
+    perceive_node,
+    plan_node,
+    route_after_observe,
+    route_after_perceive,
+)
+from agent.limits import ExecutionBudget
+from agent.planner import ObservationEvaluation, SearchPlan, SearchPlanner
+from tools.schemas import (
+    Education,
+    Preference,
+    Profile,
+    WorkMode,
 )
 
 

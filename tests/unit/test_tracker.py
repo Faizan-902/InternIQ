@@ -4,22 +4,24 @@ Owner: Sadiqua Parween (Team HumanBot)
 Specification: Technical Report Section 7, Table 6, FR-10, FR-11
 """
 
-import pytest
 from datetime import datetime
-from tools.tracker import ApplicationTracker
+
+import pytest
+
 from tools.schemas import (
-    TrackerEvent,
-    TrackerEventType,
-    Profile,
-    Listing,
     ApplicationDraft,
-    Education,
-    Project,
-    EvidenceFact,
     ClaimAudit,
     ClaimStatus,
+    Education,
+    EvidenceFact,
+    Listing,
+    Profile,
+    Project,
+    TrackerEvent,
+    TrackerEventType,
     WorkMode,
 )
+from tools.tracker import ApplicationTracker
 
 
 @pytest.fixture

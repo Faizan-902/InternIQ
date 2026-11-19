@@ -15,21 +15,21 @@ Implements FR-06 and Table 7 / Section 7.3 specifications:
 - Complete skill-gap analysis: matched skills, missing required skills, evidence coverage.
 """
 
-from datetime import datetime, date
-from typing import List, Dict, Tuple, Optional, Any
+from datetime import date, datetime
+
 import numpy as np
 
 from tools.schemas import (
     Listing,
-    Profile,
     Preference,
+    Profile,
     ScoreBreakdown,
     WorkMode,
 )
 
 # Ranking formula version and default starting weights
 RANKER_VERSION = "ranker_v1"
-DEFAULT_WEIGHTS: Dict[str, float] = {
+DEFAULT_WEIGHTS: dict[str, float] = {
     "skills": 0.35,
     "semantic_fit": 0.35,
     "preference_fit": 0.20,
@@ -84,7 +84,7 @@ def _normalize_token(s: str) -> str:
 def calculate_skills_factor(
     listing: Listing,
     profile: Profile,
-) -> Tuple[Optional[float], List[str], List[str], float]:
+) -> tuple[float | None, list[str], list[str], float]:
     """
     Computes skills match factor and skill gaps.
     Returns: (score, matched_skills, missing_skills, evidence_coverage)
@@ -98,8 +98,8 @@ def calculate_skills_factor(
         for ps in proj.skills_used:
             profile_skills_norm.add(_normalize_token(ps))
 
-    matched: List[str] = []
-    missing: List[str] = []
+    matched: list[str] = []
+    missing: list[str] = []
 
     for req in listing.required_skills:
         norm_req = _normalize_token(req)
@@ -119,8 +119,8 @@ def calculate_skills_factor(
 def calculate_semantic_factor(
     listing: Listing,
     profile: Profile,
-    preference: Optional[Preference] = None,
-) -> Optional[float]:
+    preference: Preference | None = None,
+) -> float | None:
     """
     Computes semantic similarity mapped linearly from [-1, 1] to [0, 1] and clipped.
     Uses candidate summary (goals + skills + projects) vs job description + title.
@@ -158,8 +158,8 @@ def calculate_semantic_factor(
 
 def calculate_preference_factor(
     listing: Listing,
-    preference: Optional[Preference],
-) -> Tuple[Optional[float], List[str]]:
+    preference: Preference | None,
+) -> tuple[float | None, list[str]]:
     """
     Computes preference fit = satisfied soft preferences / assessable configured preferences.
     Missing listing values are unavailable, not failures.
@@ -167,7 +167,7 @@ def calculate_preference_factor(
     if not preference:
         return None, ["No preferences configured; factor unavailable"]
 
-    explanations: List[str] = []
+    explanations: list[str] = []
     satisfied = 0
     assessable = 0
 
@@ -231,8 +231,8 @@ def calculate_preference_factor(
 
 def calculate_deadline_factor(
     listing: Listing,
-    current_date: Optional[date] = None,
-) -> Tuple[Optional[float], Optional[str]]:
+    current_date: date | None = None,
+) -> tuple[float | None, str | None]:
     """
     For unexpired listings with deadline: D = 1 - min(days_remaining / 30, 1).
     Missing deadline is unavailable and excluded from weighted denominator.
@@ -262,15 +262,15 @@ def calculate_deadline_factor(
 def score_opportunity(
     listing: Listing,
     profile: Profile,
-    preference: Optional[Preference] = None,
-    current_date: Optional[date] = None,
-    custom_weights: Optional[Dict[str, float]] = None,
+    preference: Preference | None = None,
+    current_date: date | None = None,
+    custom_weights: dict[str, float] | None = None,
 ) -> ScoreBreakdown:
     """
     Computes transparent hybrid match score with step-by-step audit explanations.
     """
     weights = dict(custom_weights or DEFAULT_WEIGHTS)
-    explanations: List[str] = []
+    explanations: list[str] = []
 
     # 1. Skills factor
     skills_score, matched_skills, missing_skills, coverage = calculate_skills_factor(listing, profile)
@@ -300,7 +300,7 @@ def score_opportunity(
     else:
         explanations.append(f"Deadline urgency factor: {deadline_expl}")
 
-    factor_scores: Dict[str, Optional[float]] = {
+    factor_scores: dict[str, float | None] = {
         "skills": skills_score,
         "semantic_fit": semantic_score,
         "preference_fit": pref_score,
@@ -336,11 +336,11 @@ def score_opportunity(
 
 
 def rank_opportunities(
-    listings: List[Listing],
+    listings: list[Listing],
     profile: Profile,
-    preference: Optional[Preference] = None,
-    current_date: Optional[date] = None,
-) -> List[Tuple[Listing, ScoreBreakdown]]:
+    preference: Preference | None = None,
+    current_date: date | None = None,
+) -> list[tuple[Listing, ScoreBreakdown]]:
     """
     Ranks multiple listings by composite score in descending order.
     Unranked (None score) items are placed at the end.

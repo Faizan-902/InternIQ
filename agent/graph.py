@@ -11,25 +11,25 @@ Downstream pipeline stages (Vet, Rank, Generate, Approve, Record) will be integr
 in Milestone 3 Work Items 2-4.
 """
 
-from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
+from typing import Any
+
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
-from langgraph.graph import StateGraph, START, END
-
+from agent.limits import ExecutionBudget
+from agent.planner import ObservationEvaluation, SearchPlan, SearchPlanner
+from tools.fetchers import fetch_opportunities, normalize_dedupe
 from tools.schemas import (
-    Profile,
-    Preference,
-    Listing,
-    EligibilityResult,
-    RiskFlag,
-    ScoreBreakdown,
     ApplicationDraft,
     Approval,
+    EligibilityResult,
+    Listing,
+    Preference,
+    Profile,
+    RiskFlag,
+    ScoreBreakdown,
 )
-from agent.limits import ExecutionBudget
-from agent.planner import SearchPlanner, SearchPlan, ObservationEvaluation
-from tools.fetchers import fetch_opportunities, normalize_dedupe, import_csv
 
 
 def _get_plan_field(plan: Any, field_name: str, default: Any = None) -> Any:
@@ -46,31 +46,31 @@ def _get_plan_field(plan: Any, field_name: str, default: Any = None) -> Any:
 class InternIQAgentState(BaseModel):
     run_id: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    profile: Optional[Profile] = None
-    preference: Optional[Preference] = None
+    profile: Profile | None = None
+    preference: Preference | None = None
     budget: ExecutionBudget = Field(default_factory=ExecutionBudget)
 
     # Discovery & Listings
-    listings: List[Listing] = Field(default_factory=list)
-    source_status: Dict[str, str] = Field(default_factory=dict)
+    listings: list[Listing] = Field(default_factory=list)
+    source_status: dict[str, str] = Field(default_factory=dict)
 
     # Work Item 1: Search Plan & Observation Evaluation tracking
-    current_plan: Optional[Union[SearchPlan, Dict[str, Any]]] = None
-    evaluation: Optional[ObservationEvaluation] = None
+    current_plan: SearchPlan | dict[str, Any] | None = None
+    evaluation: ObservationEvaluation | None = None
     iteration: int = 1
-    csv_content: Optional[str] = None
-    source_config: Dict[str, Any] = Field(default_factory=dict)
+    csv_content: str | None = None
+    source_config: dict[str, Any] = Field(default_factory=dict)
 
     # Vetting & Ranking (Mohd Faizan Khan's components)
-    eligibility_map: Dict[str, EligibilityResult] = Field(default_factory=dict)
-    risk_map: Dict[str, List[RiskFlag]] = Field(default_factory=dict)
-    scores_map: Dict[str, ScoreBreakdown] = Field(default_factory=dict)
-    ranked_listing_ids: List[str] = Field(default_factory=list)
+    eligibility_map: dict[str, EligibilityResult] = Field(default_factory=dict)
+    risk_map: dict[str, list[RiskFlag]] = Field(default_factory=dict)
+    scores_map: dict[str, ScoreBreakdown] = Field(default_factory=dict)
+    ranked_listing_ids: list[str] = Field(default_factory=list)
 
     # Generation & Approval
-    drafts_map: Dict[str, ApplicationDraft] = Field(default_factory=dict)
-    approval: Optional[Approval] = None
-    errors: List[str] = Field(default_factory=list)
+    drafts_map: dict[str, ApplicationDraft] = Field(default_factory=dict)
+    approval: Approval | None = None
+    errors: list[str] = Field(default_factory=list)
     completion_status: str = "in_progress"
 
 
@@ -78,7 +78,7 @@ class InternIQAgentState(BaseModel):
 # Milestone 3, Work Item 1: Node Definitions
 # =====================================================================
 
-def perceive_node(state: InternIQAgentState) -> Dict[str, Any]:
+def perceive_node(state: InternIQAgentState) -> dict[str, Any]:
     """
     Validates and prepares candidate preference and profile.
     Returns state updates without mutating the input state object.
@@ -108,7 +108,7 @@ def route_after_perceive(state: InternIQAgentState) -> str:
     return "plan"
 
 
-def plan_node(state: InternIQAgentState) -> Dict[str, Any]:
+def plan_node(state: InternIQAgentState) -> dict[str, Any]:
     """
     Formulates the initial search plan (Attempt 1) or generates a progressively
     broadened search plan (Attempts 2, 3, 4) using SearchPlanner.
@@ -165,7 +165,7 @@ def plan_node(state: InternIQAgentState) -> Dict[str, Any]:
             }
 
 
-def act_node(state: InternIQAgentState) -> Dict[str, Any]:
+def act_node(state: InternIQAgentState) -> dict[str, Any]:
     """
     Executes search queries against authorized connectors.
     Safely handles unconfigured or unavailable sources.
@@ -178,7 +178,7 @@ def act_node(state: InternIQAgentState) -> Dict[str, Any]:
     errors = list(state.errors or [])
     new_budget = state.budget.model_copy(deep=True)
 
-    newly_fetched: List[Listing] = []
+    newly_fetched: list[Listing] = []
 
     # Check for manual CSV content in state or preference constraints
     csv_content = state.csv_content
@@ -233,8 +233,8 @@ def act_node(state: InternIQAgentState) -> Dict[str, Any]:
                 source_status[source] = f"unsupported: source '{source}' not recognized"
 
         except Exception as exc:
-            source_status[source] = f"failed: {str(exc)}"
-            errors.append(f"Source '{source}' error: {str(exc)}")
+            source_status[source] = f"failed: {exc!s}"
+            errors.append(f"Source '{source}' error: {exc!s}")
 
     # Cumulative deduplication: combine previous listings with newly fetched listings
     combined = list(state.listings or []) + newly_fetched
@@ -249,7 +249,7 @@ def act_node(state: InternIQAgentState) -> Dict[str, Any]:
     }
 
 
-def observe_node(state: InternIQAgentState) -> Dict[str, Any]:
+def observe_node(state: InternIQAgentState) -> dict[str, Any]:
     """
     Evaluates retrieved listings against target candidate preferences.
     Produces structured ObservationEvaluation diagnosing sufficiency root causes.

@@ -13,11 +13,10 @@ Implements FR-07, Section 6.4, and Section 10.5 specifications:
 """
 
 import re
-from urllib.parse import urlparse
 from datetime import datetime
-from typing import List, Optional
-from tools.schemas import Listing, RiskFlag, RiskSeverity, ScamCheckResult
+from urllib.parse import urlparse
 
+from tools.schemas import Listing, RiskFlag, RiskSeverity, ScamCheckResult
 
 # Regex patterns for heuristic signals
 FEE_PATTERNS = [
@@ -65,7 +64,7 @@ def check_scam_signals(listing: Listing) -> ScamCheckResult:
     Evaluates an opportunity listing against multi-factor risk heuristics.
     Returns non-accusatory risk flags referencing the exact evidence snippet.
     """
-    flags: List[RiskFlag] = []
+    flags: list[RiskFlag] = []
     text_to_scan = f"{listing.title} {listing.description} {listing.eligibility_text or ''}".lower()
 
     # 1. Fee Request Detection (High Risk)
@@ -184,7 +183,7 @@ def check_scam_signals(listing: Listing) -> ScamCheckResult:
         pass
 
     # Determine highest severity
-    highest_severity: Optional[RiskSeverity] = None
+    highest_severity: RiskSeverity | None = None
     if any(f.severity == RiskSeverity.HIGH for f in flags):
         highest_severity = RiskSeverity.HIGH
     elif any(f.severity == RiskSeverity.MEDIUM for f in flags):

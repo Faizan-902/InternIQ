@@ -13,12 +13,13 @@ Guarantees:
 - Outputs strongly typed Pydantic Listing objects with full provenance.
 """
 
-import re
-import html
 import hashlib
+import html
+import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+
 import httpx
+
 from tools.schemas import Listing, WorkMode
 
 
@@ -62,9 +63,9 @@ class GreenhouseConnector:
     def fetch_board_jobs(
         self,
         board_token: str,
-        organization_name: Optional[str] = None,
-        client: Optional[httpx.Client] = None,
-    ) -> List[Listing]:
+        organization_name: str | None = None,
+        client: httpx.Client | None = None,
+    ) -> list[Listing]:
         """
         Fetches published job postings from an employer's Greenhouse board.
         """
@@ -80,12 +81,12 @@ class GreenhouseConnector:
             
             response.raise_for_status()
             data = response.json()
-        except Exception as e:
+        except Exception:
             # Safe network failure handling
             return []
 
         jobs_data = data.get("jobs", [])
-        listings: List[Listing] = []
+        listings: list[Listing] = []
 
         for job in jobs_data:
             job_id = str(job.get("id", ""))
@@ -107,7 +108,7 @@ class GreenhouseConnector:
             canonical_url = job.get("absolute_url") or f"https://boards.greenhouse.io/{board_token}/jobs/{job_id}"
 
             # Content hash for deduplication
-            content_hash = hashlib.sha256(f"{title}|{org}|{plain_desc[:200]}".encode("utf-8")).hexdigest()
+            content_hash = hashlib.sha256(f"{title}|{org}|{plain_desc[:200]}".encode()).hexdigest()
 
             listing = Listing(
                 listing_id=f"gh_{board_token}_{job_id}",

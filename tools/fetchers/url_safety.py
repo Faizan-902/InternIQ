@@ -14,8 +14,6 @@ Guarantees:
 import ipaddress
 import socket
 from urllib.parse import urlparse
-from typing import Tuple, Optional
-
 
 # Blocked IPv4 networks
 BLOCKED_IPV4_NETWORKS = [
@@ -64,7 +62,7 @@ def is_ip_blocked(ip_str: str, allow_local_fixtures: bool = False) -> bool:
     return False
 
 
-def validate_safe_url(url: str, allow_local_fixtures: bool = False) -> Tuple[bool, Optional[str]]:
+def validate_safe_url(url: str, allow_local_fixtures: bool = False) -> tuple[bool, str | None]:
     """
     Validates a URL against strict SSRF and safe connector requirements.
     
@@ -78,7 +76,7 @@ def validate_safe_url(url: str, allow_local_fixtures: bool = False) -> Tuple[boo
     try:
         parsed = urlparse(url)
     except Exception as e:
-        return False, f"Malformed URL: {str(e)}"
+        return False, f"Malformed URL: {e!s}"
 
     # Scheme check
     allowed_schemes = ("https",) if not allow_local_fixtures else ("https", "http")

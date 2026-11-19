@@ -10,23 +10,24 @@ Strict SSRF protection:
 - Strips scripts and executes zero JavaScript.
 """
 
-import re
 import hashlib
+import re
 from datetime import datetime
-from typing import Optional, Tuple
 from urllib.parse import urlparse
+
 import httpx
-from tools.schemas import Listing, WorkMode
+
+from tools.fetchers.greenhouse import detect_work_mode, strip_html_tags
 from tools.fetchers.url_safety import validate_safe_url
-from tools.fetchers.greenhouse import strip_html_tags, detect_work_mode
+from tools.schemas import Listing
 
 
 def import_url_opportunity(
     url: str,
     allow_local_fixtures: bool = False,
     timeout: float = 8.0,
-    client: Optional[httpx.Client] = None,
-) -> Tuple[Optional[Listing], Optional[str]]:
+    client: httpx.Client | None = None,
+) -> tuple[Listing | None, str | None]:
     """
     Safely retrieves and parses an opportunity from a validated public URL.
     
@@ -71,7 +72,7 @@ def import_url_opportunity(
 
         html_content = response.text
     except Exception as e:
-        return None, f"Failed to fetch listing from URL: {str(e)}"
+        return None, f"Failed to fetch listing from URL: {e!s}"
 
     # Parse basic metadata from HTML
     parsed_url = urlparse(url)
@@ -92,7 +93,7 @@ def import_url_opportunity(
     plain_desc_trimmed = plain_desc[:10000]
 
     work_mode = detect_work_mode(plain_desc_trimmed, "")
-    content_hash = hashlib.sha256(f"{title_cleaned}|{org}|{plain_desc_trimmed[:200]}".encode("utf-8")).hexdigest()
+    content_hash = hashlib.sha256(f"{title_cleaned}|{org}|{plain_desc_trimmed[:200]}".encode()).hexdigest()
 
     listing = Listing(
         listing_id=f"url_{content_hash[:10]}",

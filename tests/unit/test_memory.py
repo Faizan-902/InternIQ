@@ -11,20 +11,22 @@ Tests:
 5. Database Integration: dependency injection and custom db_path
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
+
 from agent.memory import AgentMemoryManager
-from tools.tracker import ApplicationTracker
 from tools.schemas import (
-    Profile,
     Education,
-    Project,
     EvidenceFact,
     Preference,
-    WorkMode,
+    Profile,
+    Project,
     TrackerEvent,
     TrackerEventType,
+    WorkMode,
 )
+from tools.tracker import ApplicationTracker
 
 
 @pytest.fixture

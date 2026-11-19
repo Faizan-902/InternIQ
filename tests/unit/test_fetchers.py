@@ -4,15 +4,17 @@ Owner: Sadiqua Parween (Team HumanBot)
 Specification: Technical Report Section 6.1, Section 6.5, Table 5, Table 10
 """
 
-import pytest
 import httpx
-from datetime import datetime
-from tools.schemas import Listing, WorkMode
-from tools.fetchers.url_safety import validate_safe_url, is_ip_blocked
-from tools.fetchers.greenhouse import GreenhouseConnector, strip_html_tags, detect_work_mode
-from tools.fetchers.lever import LeverConnector
-from tools.fetchers import normalize_dedupe, import_csv
 
+from tools.fetchers import import_csv, normalize_dedupe
+from tools.fetchers.greenhouse import (
+    GreenhouseConnector,
+    detect_work_mode,
+    strip_html_tags,
+)
+from tools.fetchers.lever import LeverConnector
+from tools.fetchers.url_safety import is_ip_blocked, validate_safe_url
+from tools.schemas import Listing, WorkMode
 
 # =====================================================================
 # URL Safety & SSRF Guardrail Tests

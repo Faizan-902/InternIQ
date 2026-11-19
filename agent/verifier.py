@@ -13,12 +13,12 @@ Section 5.2 Node 7, and Section 8.4:
 """
 
 import re
-from typing import List, Tuple, Set
+
 from tools.schemas import (
-    Profile,
+    ApplicationDraft,
     ClaimAudit,
     ClaimStatus,
-    ApplicationDraft,
+    Profile,
 )
 
 
@@ -51,7 +51,7 @@ class ClaimVerifier:
     def _build_ground_truth_knowledge_base(self) -> None:
         """Indexes all verified atomic facts from candidate profile."""
         self.confirmed_facts_by_id = {f.fact_id: f for f in self.profile.confirmed_facts}
-        self.verified_skills_norm: Set[str] = {_normalize(s) for s in self.profile.skills}
+        self.verified_skills_norm: set[str] = {_normalize(s) for s in self.profile.skills}
 
         # Add skills from projects
         for p in self.profile.projects:
@@ -59,7 +59,7 @@ class ClaimVerifier:
                 self.verified_skills_norm.add(_normalize(s))
 
         # Add education terms
-        self.verified_edu_terms: Set[str] = set()
+        self.verified_edu_terms: set[str] = set()
         for edu in self.profile.education:
             self.verified_edu_terms.add(_normalize(edu.degree))
             if edu.branch:
@@ -97,7 +97,7 @@ class ClaimVerifier:
         has_metrics = len(metric_matches) > 0
 
         # 2. Extract technical skill mentions in sentence
-        mentioned_tech: List[str] = []
+        mentioned_tech: list[str] = []
         for tech in KNOWN_TECH_TOKENS:
             if re.search(rf"\b{re.escape(tech)}\b", clean_sentence, re.IGNORECASE):
                 mentioned_tech.append(tech)
@@ -140,7 +140,7 @@ class ClaimVerifier:
             )
 
         # 4. Search for supporting atomic facts in confirmed_facts
-        supporting_ids: List[str] = []
+        supporting_ids: list[str] = []
         if mentioned_tech and not ungrounded_tech:
             supporting_ids.extend([f"verified_skill_{t}" for t in mentioned_tech])
 
@@ -195,7 +195,7 @@ class ClaimVerifier:
         Performs a full audit on an ApplicationDraft.
         Updates claims list, unsupported count, and is_fully_grounded flag.
         """
-        audited_claims: List[ClaimAudit] = []
+        audited_claims: list[ClaimAudit] = []
         claim_counter = 1
 
         # Audit resume bullets

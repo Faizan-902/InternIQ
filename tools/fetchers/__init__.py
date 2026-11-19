@@ -10,19 +10,24 @@ Implements tool contract for:
 - `import_url_opportunity`: Safe user-supplied URL fetcher with SSRF defense.
 """
 
-from typing import List, Optional, Dict, Any
 import csv
-import io
 import hashlib
+import io
 from datetime import datetime
-from tools.schemas import Listing, WorkMode
-from tools.fetchers.url_safety import validate_safe_url, is_ip_blocked
-from tools.fetchers.greenhouse import GreenhouseConnector, strip_html_tags, detect_work_mode
+from typing import Any, Dict, List, Optional
+
+from tools.fetchers.greenhouse import (
+    GreenhouseConnector,
+    detect_work_mode,
+    strip_html_tags,
+)
 from tools.fetchers.lever import LeverConnector
 from tools.fetchers.url_import import import_url_opportunity
+from tools.fetchers.url_safety import is_ip_blocked, validate_safe_url
+from tools.schemas import Listing, WorkMode
 
 
-def normalize_dedupe(raw_listings: List[Listing]) -> List[Listing]:
+def normalize_dedupe(raw_listings: list[Listing]) -> list[Listing]:
     """
     Deduplicates listings across sources using content hash, canonical URLs,
     and source record IDs. Preserves provenance links.
@@ -49,7 +54,7 @@ def normalize_dedupe(raw_listings: List[Listing]) -> List[Listing]:
     return deduped
 
 
-def import_csv(file_content: str, source_id: str = "manual_csv") -> List[Listing]:
+def import_csv(file_content: str, source_id: str = "manual_csv") -> list[Listing]:
     """
     Parses a CSV stream of job opportunities into validated Listing objects.
     """
@@ -106,7 +111,7 @@ def import_csv(file_content: str, source_id: str = "manual_csv") -> List[Listing
         except ValueError:
             work_mode = WorkMode.UNKNOWN
 
-        content_hash = hashlib.sha256(f"{title}|{org}|{desc[:200]}".encode("utf-8")).hexdigest()
+        content_hash = hashlib.sha256(f"{title}|{org}|{desc[:200]}".encode()).hexdigest()
 
         listing = Listing(
             listing_id=row.get("listing_id", f"{source_id}_{idx}_{content_hash[:8]}"),
@@ -138,10 +143,10 @@ def import_csv(file_content: str, source_id: str = "manual_csv") -> List[Listing
 
 def fetch_opportunities(
     source_id: str,
-    target_identifier: Optional[str] = None,
-    csv_content: Optional[str] = None,
+    target_identifier: str | None = None,
+    csv_content: str | None = None,
     timeout: float = 10.0,
-) -> List[Listing]:
+) -> list[Listing]:
     """
     High-level dispatcher for data ingestion.
     Supports greenhouse, lever, and manual_csv.
@@ -159,14 +164,14 @@ def fetch_opportunities(
 
 
 __all__ = [
-    "normalize_dedupe",
-    "import_csv",
-    "fetch_opportunities",
-    "import_url_opportunity",
-    "validate_safe_url",
-    "is_ip_blocked",
     "GreenhouseConnector",
     "LeverConnector",
-    "strip_html_tags",
     "detect_work_mode",
+    "fetch_opportunities",
+    "import_csv",
+    "import_url_opportunity",
+    "is_ip_blocked",
+    "normalize_dedupe",
+    "strip_html_tags",
+    "validate_safe_url",
 ]

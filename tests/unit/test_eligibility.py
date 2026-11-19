@@ -3,17 +3,19 @@ Unit Tests for Deterministic Eligibility Verification Engine
 Owner: Mohd Faizan Khan (Team HumanBot)
 """
 
-import pytest
 from datetime import date
-from tools.schemas import (
-    Listing,
-    Profile,
-    Education,
-    Preference,
-    WorkMode,
-    EligibilityVerdict,
-)
+
+import pytest
+
 from tools.eligibility import check_eligibility
+from tools.schemas import (
+    Education,
+    EligibilityVerdict,
+    Listing,
+    Preference,
+    Profile,
+    WorkMode,
+)
 
 
 @pytest.fixture

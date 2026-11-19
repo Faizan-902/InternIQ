@@ -13,16 +13,17 @@ Guarantees:
 """
 
 import json
-from typing import Dict, Any, Optional
-from tools.schemas import Listing, Profile, ApplicationDraft, ScoreBreakdown
+from typing import Any
+
+from tools.schemas import ApplicationDraft, Listing, Profile, ScoreBreakdown
 
 
 def build_application_packet(
     listing: Listing,
     profile: Profile,
     draft: ApplicationDraft,
-    score_breakdown: Optional[ScoreBreakdown] = None,
-) -> Dict[str, Any]:
+    score_breakdown: ScoreBreakdown | None = None,
+) -> dict[str, Any]:
     """
     Assembles a field-by-field packet ready for the student to review,
     copy into the employer portal, and manually submit.
@@ -92,7 +93,7 @@ def build_application_packet(
     return packet
 
 
-def export_packet_markdown(packet: Dict[str, Any]) -> str:
+def export_packet_markdown(packet: dict[str, Any]) -> str:
     """
     Renders an application packet as clean, human-readable Markdown.
     """
@@ -133,12 +134,12 @@ def export_packet_markdown(packet: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def export_packet_json(packet: Dict[str, Any]) -> str:
+def export_packet_json(packet: dict[str, Any]) -> str:
     """Serializes packet dictionary to formatted JSON."""
     return json.dumps(packet, indent=2, default=str)
 
 
-def export_packet_text(packet: Dict[str, Any]) -> str:
+def export_packet_text(packet: dict[str, Any]) -> str:
     """Serializes packet to simple plain text suitable for direct copy-paste."""
     out = []
     out.append(f"INTERNSHIP APPLICATION PACKET: {packet['title']} - {packet['organization']}")

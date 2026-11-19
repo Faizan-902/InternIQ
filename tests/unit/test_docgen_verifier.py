@@ -4,18 +4,18 @@ Owner: Mohd Faizan Khan (Team HumanBot)
 """
 
 import pytest
-from tools.schemas import (
-    Listing,
-    Profile,
-    Education,
-    Project,
-    EvidenceFact,
-    WorkMode,
-    ClaimStatus,
-    ApplicationDraft,
-)
+
 from agent.verifier import ClaimVerifier
 from tools.docgen import generate_application_draft
+from tools.schemas import (
+    ClaimStatus,
+    Education,
+    EvidenceFact,
+    Listing,
+    Profile,
+    Project,
+    WorkMode,
+)
 
 
 @pytest.fixture

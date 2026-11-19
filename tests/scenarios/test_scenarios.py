@@ -16,27 +16,28 @@ Implements Appendix C Test Scenario Catalogue (PDF Page 35):
 10. Execution budget circuit breaker: stops after max re-plans/tool calls.
 """
 
-import pytest
 from datetime import date, datetime
+
+import pytest
+
+from agent.limits import ExecutionBudget
+from tools.docgen import generate_application_draft
+from tools.eligibility import check_eligibility
+from tools.fetchers import normalize_dedupe
+from tools.ranker import score_opportunity
+from tools.scam_check import check_scam_signals
 from tools.schemas import (
+    Education,
+    EligibilityVerdict,
+    EvidenceFact,
     Listing,
     Profile,
-    Education,
     Project,
-    EvidenceFact,
-    Preference,
-    WorkMode,
-    EligibilityVerdict,
     TrackerEvent,
     TrackerEventType,
+    WorkMode,
 )
-from tools.eligibility import check_eligibility
-from tools.scam_check import check_scam_signals
-from tools.ranker import score_opportunity, rank_opportunities
-from tools.docgen import generate_application_draft
-from tools.fetchers import normalize_dedupe
 from tools.tracker import ApplicationTracker
-from agent.limits import ExecutionBudget
 
 
 @pytest.fixture

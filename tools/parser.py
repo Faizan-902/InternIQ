@@ -16,10 +16,11 @@ Guarantees:
 import io
 import re
 from datetime import datetime
-from typing import List, Optional, Tuple, Set
-import pypdf
+
 import docx
-from tools.schemas import Profile, Education, Skill, Project, EvidenceFact
+import pypdf
+
+from tools.schemas import Education, EvidenceFact, Profile, Project
 
 # File limit: 10 MB
 MAX_RESUME_BYTES = 10 * 1024 * 1024
@@ -81,7 +82,7 @@ def extract_raw_text(file_content: bytes, filename: str) -> str:
                 if extracted:
                     pages_text.append(extracted)
             text = "\n".join(pages_text)
-        except Exception as e:
+        except Exception:
             text = ""
     elif lower_name.endswith(".docx"):
         try:
@@ -103,7 +104,7 @@ def extract_raw_text(file_content: bytes, filename: str) -> str:
     return text.strip()
 
 
-def extract_contact_info(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def extract_contact_info(text: str) -> tuple[str | None, str | None, str | None]:
     """Extracts full name, email, and phone number using deterministic patterns."""
     # Email
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text)
@@ -131,9 +132,9 @@ def extract_contact_info(text: str) -> Tuple[Optional[str], Optional[str], Optio
     return full_name, email, phone
 
 
-def extract_education(text: str) -> List[Education]:
+def extract_education(text: str) -> list[Education]:
     """Extracts education records (degree, branch, graduation year, CGPA)."""
-    education_records: List[Education] = []
+    education_records: list[Education] = []
     
     # Degree detection
     detected_degree = None
@@ -191,9 +192,9 @@ def extract_education(text: str) -> List[Education]:
     return education_records
 
 
-def extract_skills(text: str) -> List[str]:
+def extract_skills(text: str) -> list[str]:
     """Extracts known tech stack skills from text."""
-    found_skills: Set[str] = set()
+    found_skills: set[str] = set()
     for skill in KNOWN_SKILLS:
         # Word boundary search, escape special chars like C++
         escaped = re.escape(skill)
@@ -203,9 +204,9 @@ def extract_skills(text: str) -> List[str]:
     return sorted(list(found_skills))
 
 
-def extract_projects(text: str, skills: List[str]) -> List[Project]:
+def extract_projects(text: str, skills: list[str]) -> list[Project]:
     """Extracts project sections or creates structured project summaries."""
-    projects: List[Project] = []
+    projects: list[Project] = []
     
     # Identify project headers
     proj_section_match = re.search(r"(?:projects|academic projects|key projects)([\s\S]*?)(?:experience|education|skills|certifications|awards|$)", text, re.IGNORECASE)
@@ -261,7 +262,7 @@ def parse_profile(
     projects = extract_projects(raw_text, skills)
 
     # Build atomic EvidenceFacts for claim verification
-    confirmed_facts: List[EvidenceFact] = []
+    confirmed_facts: list[EvidenceFact] = []
     
     # 1. Contact / Identity facts
     confirmed_facts.append(
