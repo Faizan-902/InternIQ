@@ -15,9 +15,9 @@
 
 | Team Member | Domain & Modules | Key Ownership |
 | :--- | :--- | :--- |
-| **Mohd Faizan Khan** | **Evaluation & Verification** | **Deterministic Eligibility Engine** (`tools/eligibility.py`), **Transparent Hybrid Ranker** (`tools/ranker.py`), **Scam-Signal Detection** (`tools/scam_check.py`), **Document Generation & Claim Verifier** (`tools/docgen.py`, `agent/verifier.py`), **Evaluation Benchmarks & Scripts** (`eval/`, `tests/`) |
-| **Samriddhi Raj** | **Agent Core & Interface** | LangGraph core workflow (`agent/graph.py`), Multi-source search planner (`agent/planner.py`), Execution limits & safety circuit breakers (`agent/limits.py`), Memory management (`agent/memory.py`), Streamlit UI (`app/ui.py`) |
-| **Sadiqua Parween** | **Data & Application Tools** | Authorized source fetchers & connectors (`tools/fetchers/`), Resume/profile parser (`tools/parser.py`), Listing normalization & deduplication, Application packet builder (`tools/packet.py`), SQLite tracker (`tools/tracker.py`) |
+| **Mohd Faizan Khan** ([@Faizan-902](https://github.com/Faizan-902)) | **Evaluation & Verification** | **Deterministic Eligibility Engine** (`tools/eligibility.py`), **Transparent Hybrid Ranker** (`tools/ranker.py`), **Scam-Signal Detection** (`tools/scam_check.py`), **Document Generation & Claim Verifier** (`tools/docgen.py`, `agent/verifier.py`), **Evaluation Benchmarks & Scripts** (`eval/`, `tests/`) |
+| **Samriddhi Raj** ([@RajSamriddhi](https://github.com/RajSamriddhi)) | **Agent Core & Interface** | LangGraph core workflow (`agent/graph.py`), Multi-source search planner (`agent/planner.py`), Execution limits & safety circuit breakers (`agent/limits.py`), Memory management (`agent/memory.py`), Streamlit UI (`app/ui.py`) |
+| **Sadiqua Parween** ([@Sadiqua-Parween](https://github.com/Sadiqua-Parween)) | **Data & Application Tools** | Authorized source fetchers & connectors (`tools/fetchers/`), Resume/profile parser (`tools/parser.py`), Listing normalization & deduplication, Application packet builder (`tools/packet.py`), SQLite tracker (`tools/tracker.py`) |
 
 ---
 
