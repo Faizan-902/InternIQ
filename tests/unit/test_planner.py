@@ -17,13 +17,14 @@ Tests:
 """
 
 import pytest
-from agent.planner import SearchPlanner, SearchPlan
+from agent.planner import SearchPlanner, SearchPlan, ObservationEvaluation
 from tools.schemas import (
     Preference,
     Profile,
     Education,
     Project,
     WorkMode,
+    Listing,
 )
 
 
@@ -292,3 +293,353 @@ def test_type_validation_errors(sample_preference):
 
     with pytest.raises(TypeError, match="Expected profile to be an instance of Profile schema or None"):
         planner.create_plan(sample_preference, profile="invalid_profile_type")
+
+
+# =====================================================================
+# Work Item 2: Observation Evaluation & Insufficiency Diagnosis Tests
+# =====================================================================
+
+def _create_test_listing(
+    listing_id: str,
+    title: str,
+    description: str = "Internship opportunity description",
+    locations: Optional[list] = None,
+    work_mode: WorkMode = WorkMode.HYBRID,
+    required_skills: Optional[list] = None,
+) -> Listing:
+    return Listing(
+        listing_id=listing_id,
+        source_id="greenhouse",
+        source_record_id=listing_id,
+        canonical_url=f"https://boards.greenhouse.io/job/{listing_id}",
+        title=title,
+        organization="TestCorp",
+        description=description,
+        locations=locations if locations is not None else ["Bangalore"],
+        work_mode=work_mode,
+        required_skills=required_skills or ["Python"],
+    )
+
+
+def test_evaluation_sufficient_results(sample_preference, sample_profile):
+    """Verifies that sufficient relevant observations produce is_sufficient=True and no replan recommendation."""
+    planner = SearchPlanner()
+
+    listings = [
+        _create_test_listing(
+            "l1",
+            "Machine Learning Intern",
+            description="FinTech algorithmic risk and fraud detection models.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+        _create_test_listing(
+            "l2",
+            "Junior ML Engineer Intern",
+            description="Developing financial portfolio AI models.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.REMOTE,
+        ),
+        _create_test_listing(
+            "l3",
+            "AI Research Intern",
+            description="Building machine learning pipelines for FinTech banking systems.",
+            locations=["Bengaluru, India"],
+            work_mode=WorkMode.HYBRID,
+        ),
+        _create_test_listing(
+            "l4",
+            "Machine Learning Intern",
+            description="Healthcare diagnostics deep learning models.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+    ]
+
+    result = planner.evaluate_observations(
+        listings,
+        sample_preference,
+        sample_profile,
+        attempt=1,
+        min_sufficient_count=3,
+    )
+
+    assert isinstance(result, ObservationEvaluation)
+    assert result.is_sufficient is True
+    assert result.total_observations == 4
+    assert result.relevant_observations == 4
+    assert result.total_listings == 4
+    assert result.relevant_listings == 4
+    assert result.recommend_replan is False
+    assert result.should_replan is False
+    assert len(result.reasons) == 0
+    assert len(result.relevant_listing_ids) == 4
+    assert "sufficient" in result.diagnosis.lower()
+
+
+def test_evaluation_no_search_results(sample_preference):
+    """Verifies handling of completely empty observation sets (0 results)."""
+    planner = SearchPlanner()
+
+    result = planner.evaluate_observations([], sample_preference, attempt=1)
+
+    assert result.is_sufficient is False
+    assert result.total_observations == 0
+    assert result.relevant_observations == 0
+    assert result.recommend_replan is True
+    assert any("No search results were retrieved" in r for r in result.reasons)
+    assert "no listings found" in result.diagnosis.lower()
+
+
+def test_evaluation_too_few_results(sample_preference):
+    """Verifies insufficiency diagnosis when results are below the required threshold."""
+    planner = SearchPlanner()
+
+    listings = [
+        _create_test_listing(
+            "l1",
+            "Machine Learning Intern",
+            description="FinTech risk modeling.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        )
+    ]
+
+    result = planner.evaluate_observations(
+        listings,
+        sample_preference,
+        attempt=1,
+        min_sufficient_count=3,
+    )
+
+    assert result.is_sufficient is False
+    assert result.total_observations == 1
+    assert result.relevant_observations == 1
+    assert result.recommend_replan is True
+    assert any("Too few relevant listings found" in r for r in result.reasons)
+    assert "insufficient" in result.diagnosis.lower()
+
+
+def test_evaluation_role_mismatches(sample_preference):
+    """Verifies that listings matching domains/locations but failing role match are caught."""
+    planner = SearchPlanner()
+
+    listings = [
+        _create_test_listing(
+            "l1",
+            "Sales Representative Intern",
+            description="FinTech client outreach and lead generation.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+        _create_test_listing(
+            "l2",
+            "Finance & Accounting Intern",
+            description="FinTech quarterly reconciliation.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.REMOTE,
+        ),
+        _create_test_listing(
+            "l3",
+            "Human Resources Intern",
+            description="FinTech talent acquisition.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+    ]
+
+    result = planner.evaluate_observations(listings, sample_preference, attempt=1)
+
+    assert result.is_sufficient is False
+    assert result.role_match_count == 0
+    assert result.relevant_observations == 0
+    assert result.recommend_replan is True
+    assert any("No listings matched target roles" in r for r in result.reasons)
+
+
+def test_evaluation_domain_mismatches():
+    """Verifies that listings with matching roles but non-matching domains are diagnosed."""
+    planner = SearchPlanner()
+    pref = Preference(
+        profile_id="p_domain",
+        target_roles=["Backend Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.HYBRID],
+    )
+
+    listings = [
+        _create_test_listing(
+            "l1",
+            "Backend Intern",
+            description="Building gaming physics engines and 3D rendering pipelines.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+        _create_test_listing(
+            "l2",
+            "Backend Intern",
+            description="Developing agricultural soil monitoring IoT pipelines.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+        _create_test_listing(
+            "l3",
+            "Backend Intern",
+            description="Music streaming playlist compression algorithms.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.HYBRID,
+        ),
+    ]
+
+    result = planner.evaluate_observations(listings, pref, attempt=1)
+
+    assert result.is_sufficient is False
+    assert result.domain_match_count == 0
+    assert result.relevant_observations == 0
+    assert any("No listings matched preferred domains" in r for r in result.reasons)
+    assert result.recommend_replan is True
+
+
+def test_evaluation_location_mismatches():
+    """Verifies that listings in non-preferred locations or conflicting work modes are diagnosed."""
+    planner = SearchPlanner()
+    pref = Preference(
+        profile_id="p_loc",
+        target_roles=["Backend Intern"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.ON_SITE],
+    )
+
+    listings = [
+        _create_test_listing(
+            "l1",
+            "Backend Intern",
+            description="Backend microservices.",
+            locations=["London, UK"],
+            work_mode=WorkMode.ON_SITE,
+        ),
+        _create_test_listing(
+            "l2",
+            "Backend Intern",
+            description="API development.",
+            locations=["Berlin, Germany"],
+            work_mode=WorkMode.ON_SITE,
+        ),
+        _create_test_listing(
+            "l3",
+            "Backend Intern",
+            description="Distributed databases.",
+            locations=["New York, USA"],
+            work_mode=WorkMode.ON_SITE,
+        ),
+    ]
+
+    result = planner.evaluate_observations(listings, pref, attempt=1)
+
+    assert result.is_sufficient is False
+    assert result.location_match_count == 0
+    assert result.relevant_observations == 0
+    assert any("No listings matched preferred locations" in r for r in result.reasons)
+    assert result.recommend_replan is True
+
+
+def test_evaluation_missing_or_incomplete_listing_fields(sample_preference):
+    """
+    Verifies that malformed listings or listings with missing required fields
+    are not silently treated as successful matches.
+    """
+    planner = SearchPlanner()
+
+    raw_items = [
+        # Missing title
+        {"listing_id": "malformed_1", "title": "", "locations": ["Bangalore"]},
+        # Missing listing ID
+        {"listing_id": "", "title": "Machine Learning Intern", "locations": ["Bangalore"]},
+        # Incomplete schema: missing locations when user requires physical locations
+        _create_test_listing(
+            "incomplete_loc",
+            "Machine Learning Intern",
+            description="FinTech risk modeling.",
+            locations=[],
+            work_mode=WorkMode.UNKNOWN,
+        ),
+        # Non-dict, non-Listing invalid object
+        12345,
+    ]
+
+    result = planner.evaluate_observations(raw_items, sample_preference, attempt=1)
+
+    assert result.is_sufficient is False
+    assert result.unusable_count == 3
+    assert result.relevant_observations == 0
+    assert any("unusable or malformed" in r for r in result.reasons)
+
+
+def test_evaluation_diagnosis_and_replanning_recommendation_bounds(sample_preference):
+    """
+    Verifies that replanning is recommended on attempts 1 and 2,
+    but stops after attempt 3 per execution budget limits.
+    """
+    planner = SearchPlanner()
+
+    # Attempt 1 -> recommend_replan is True
+    res_att1 = planner.evaluate_observations([], sample_preference, attempt=1)
+    assert res_att1.recommend_replan is True
+
+    # Attempt 2 -> recommend_replan is True
+    res_att2 = planner.evaluate_observations([], sample_preference, attempt=2)
+    assert res_att2.recommend_replan is True
+
+    # Attempt 3 -> recommend_replan is False (limit reached)
+    res_att3 = planner.evaluate_observations([], sample_preference, attempt=3)
+    assert res_att3.recommend_replan is False
+    assert "limit of 3 rounds reached" in res_att3.diagnosis or "budget cap reached" in res_att3.diagnosis
+
+    # Singular evaluate_observation alias
+    single_res = planner.evaluate_observation(None, sample_preference, attempt=1)
+    assert single_res.is_sufficient is False
+    assert single_res.total_observations == 0
+
+
+def test_evaluation_with_dict_and_model_listings(sample_preference):
+    """Verifies that dict inputs, Listing models, and property aliases work interchangeably."""
+    planner = SearchPlanner()
+
+    mixed_items = [
+        _create_test_listing(
+            "l_model",
+            "Machine Learning Intern",
+            description="FinTech credit risk models.",
+            locations=["Bangalore"],
+            work_mode=WorkMode.REMOTE,
+        ),
+        {
+            "listing_id": "l_dict",
+            "title": "Machine Learning Intern",
+            "description": "FinTech fraud detection algorithms.",
+            "locations": ["Bangalore, India"],
+            "work_mode": "remote",
+        },
+    ]
+
+    result = planner.evaluate_observations(mixed_items, sample_preference, min_sufficient_count=2)
+
+    assert result.is_sufficient is True
+    assert result.total_observations == 2
+    assert result.relevant_observations == 2
+    assert result.total_listings == 2
+    assert result.relevant_listings == 2
+    assert result.should_replan is False
+    assert set(result.relevant_listing_ids) == {"l_model", "l_dict"}
+
+
+def test_evaluation_type_validation_errors(sample_preference):
+    """Verifies that invalid argument types in evaluate_observations raise TypeError."""
+    planner = SearchPlanner()
+
+    with pytest.raises(TypeError, match="Expected preference to be an instance of Preference schema"):
+        planner.evaluate_observations([], "invalid_preference")
+
+    with pytest.raises(TypeError, match="Expected profile to be an instance of Profile schema or None"):
+        planner.evaluate_observations([], sample_preference, profile="invalid_profile")
