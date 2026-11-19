@@ -127,3 +127,108 @@ def generate_application_draft(
         draft = verifier.audit_draft(draft)
 
     return draft
+
+
+def generate_application_draft_llm(
+    listing: Listing,
+    profile: Profile,
+    llm_callable: object | None = None,
+    max_regeneration_attempts: int = 2,
+) -> ApplicationDraft:
+    """
+    Role-specific application draft generator with live LLM integration and ClaimVerifier guardrails.
+    
+    Guarantees:
+    - If llm_callable is provided, calls it with candidate profile evidence and listing schema.
+    - Audits every generated factual sentence against profile confirmed facts.
+    - If unsupported claims are detected, executes bounded repair up to max_regeneration_attempts.
+    - If the LLM raises an exception, times out, or hallucinates beyond repair, gracefully falls back
+      to verified deterministic profile facts.
+    - Always returns an ApplicationDraft with is_fully_grounded=True and unsupported_claim_count=0.
+    """
+    if llm_callable is None:
+        return generate_application_draft(
+            listing, profile, max_regeneration_attempts=max_regeneration_attempts
+        )
+
+    verifier = ClaimVerifier(profile)
+
+    # Construct prompt grounded in confirmed facts
+    facts_text = "; ".join(f.text for f in profile.confirmed_facts)
+    skills_text = ", ".join(profile.skills)
+    prompt = (
+        f"Generate resume bullets and a cover letter for {profile.full_name} applying for "
+        f"{listing.title} at {listing.organization}.\n"
+        f"Confirmed Candidate Skills: {skills_text}\n"
+        f"Confirmed Facts: {facts_text}\n"
+        f"STRICT INSTRUCTION: Only reference candidate skills and facts listed above. Do not hallucinate."
+    )
+
+    bullets: list[str] = []
+    cover_letter: str = ""
+
+    try:
+        raw_output = llm_callable(prompt) if callable(llm_callable) else None
+        if isinstance(raw_output, dict):
+            bullets = raw_output.get("bullets", [])
+            cover_letter = raw_output.get("cover_letter", "")
+        elif isinstance(raw_output, str):
+            # Parse plain text bullets and letter
+            lines = [l.strip("- *").strip() for l in raw_output.splitlines() if l.strip()]
+            bullets = lines[:4]
+            cover_letter = raw_output
+    except Exception:
+        # LLM failure (quota, timeout, disconnect) -> safe fallback to deterministic template
+        return generate_application_draft(
+            listing, profile, max_regeneration_attempts=max_regeneration_attempts
+        )
+
+    if not bullets or not cover_letter:
+        return generate_application_draft(
+            listing, profile, max_regeneration_attempts=max_regeneration_attempts
+        )
+
+    draft = ApplicationDraft(
+        draft_id=f"draft_llm_{listing.listing_id}_{profile.profile_id[:8]}",
+        opportunity_id=listing.listing_id,
+        profile_id=profile.profile_id,
+        version=1,
+        tailored_resume_bullets=bullets,
+        cover_letter=cover_letter,
+        claims=[],
+        is_fully_grounded=False,
+        unsupported_claim_count=0,
+        created_at=datetime.utcnow(),
+    )
+
+    draft = verifier.audit_draft(draft)
+
+    # Bounded repair loop if LLM output contained hallucinations
+    attempts = 1
+    while not draft.is_fully_grounded and attempts <= max_regeneration_attempts:
+        attempts += 1
+        draft.version = attempts
+
+        unsupported_claim_texts = {
+            c.claim_text.strip().lower() for c in draft.claims if c.status == ClaimStatus.UNSUPPORTED
+        }
+        repaired_bullets = [
+            b for b in draft.tailored_resume_bullets
+            if b.strip().lower() not in unsupported_claim_texts
+        ]
+
+        if not repaired_bullets:
+            # All LLM bullets were hallucinations -> replace with grounded template bullets
+            repaired_bullets = _generate_raw_resume_bullets(listing, profile)
+
+        draft.tailored_resume_bullets = repaired_bullets
+        draft = verifier.audit_draft(draft)
+
+    # Final guarantee: if still ungrounded, fall back cleanly to 100% deterministic template
+    if not draft.is_fully_grounded:
+        return generate_application_draft(
+            listing, profile, max_regeneration_attempts=max_regeneration_attempts
+        )
+
+    return draft
+

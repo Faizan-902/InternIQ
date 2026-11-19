@@ -6,7 +6,10 @@ Owner: Mohd Faizan Khan (Team HumanBot)
 import pytest
 
 from agent.verifier import ClaimVerifier
-from tools.docgen import generate_application_draft
+from tools.docgen import (
+    generate_application_draft,
+    generate_application_draft_llm,
+)
 from tools.schemas import (
     ClaimStatus,
     Education,
@@ -116,3 +119,67 @@ def test_claim_verifier_flags_unsupported_technical_skill(candidate_profile):
     audit = verifier.verify_sentence(sentence, claim_id="test_c1")
     assert audit.status == ClaimStatus.UNSUPPORTED
     assert "go" in audit.audit_note.lower() or "docker" in audit.audit_note.lower()
+
+
+def test_llm_adapter_with_grounded_response(sample_listing, candidate_profile):
+    """When LLM returns grounded facts, draft is verified clean with 0 unsupported claims."""
+    def mock_compliant_llm(prompt: str) -> dict:
+        return {
+            "bullets": [
+                "Engineered agentic workflow assistant using Python and LangGraph.",
+                "Proficient in Python and machine learning pipelines.",
+            ],
+            "cover_letter": (
+                "Dear Hiring Team at Nova AI Labs,\n\n"
+                "I am writing to express my strong interest in the Machine Learning Intern role. "
+                "I am currently pursuing my B.Tech Computer Science & Engineering at S-VYASA University. "
+                "My technical foundation includes proficiency in Python and PyTorch.\n\n"
+                "Sincerely,\nMohd Faizan Khan"
+            ),
+        }
+
+    draft = generate_application_draft_llm(sample_listing, candidate_profile, llm_callable=mock_compliant_llm)
+    assert draft.is_fully_grounded is True
+    assert draft.unsupported_claim_count == 0
+    assert len(draft.tailored_resume_bullets) == 2
+
+
+def test_llm_adapter_catches_hallucinating_model_and_repairs(sample_listing, candidate_profile):
+    """When LLM hallucinates unconfirmed skills (Rust/AWS/Kubernetes), repair loop removes them."""
+    def mock_hallucinating_llm(prompt: str) -> dict:
+        return {
+            "bullets": [
+                "Engineered agentic workflow assistant using Python and LangGraph.",
+                "Led enterprise cloud migration to AWS and orchestrated 100+ Kubernetes clusters.",  # Hallucinated!
+                "Authored high-throughput distributed actors in Rust.",  # Hallucinated!
+            ],
+            "cover_letter": (
+                "Dear Hiring Team at Nova AI Labs,\n\n"
+                "I am writing to express my strong interest in the Machine Learning Intern role. "
+                "I am currently pursuing my B.Tech Computer Science & Engineering at S-VYASA University.\n\n"
+                "Sincerely,\nMohd Faizan Khan"
+            ),
+        }
+
+    draft = generate_application_draft_llm(
+        sample_listing, candidate_profile, llm_callable=mock_hallucinating_llm, max_regeneration_attempts=2
+    )
+    assert draft.is_fully_grounded is True
+    assert draft.unsupported_claim_count == 0
+    # The hallucinated bullets (Rust, Kubernetes, AWS) must have been eliminated!
+    for b in draft.tailored_resume_bullets:
+        assert "kubernetes" not in b.lower()
+        assert "rust" not in b.lower()
+
+
+def test_llm_adapter_gracefully_falls_back_on_exception(sample_listing, candidate_profile):
+    """When LLM raises a network timeout or quota error, falls back cleanly to deterministic template."""
+    def broken_llm(prompt: str):
+        raise ConnectionError("LLM upstream provider timeout")
+
+    draft = generate_application_draft_llm(sample_listing, candidate_profile, llm_callable=broken_llm)
+    assert draft.is_fully_grounded is True
+    assert draft.unsupported_claim_count == 0
+    assert len(draft.tailored_resume_bullets) > 0
+    assert "Nova AI Labs" in draft.cover_letter
+
