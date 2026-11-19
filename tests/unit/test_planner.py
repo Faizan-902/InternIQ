@@ -200,7 +200,7 @@ def test_filter_extraction(sample_preference, sample_profile):
 
 
 def test_attempt_boundaries(sample_preference):
-    """Verifies attempt clamping [1, 3] and relaxed_mode flag behavior."""
+    """Verifies attempt clamping [1, 4] and relaxed_mode flag behavior."""
     planner = SearchPlanner()
 
     # Attempt 1 -> relaxed_mode is False (Work Item 1 generates initial unrelaxed plans)
@@ -208,19 +208,24 @@ def test_attempt_boundaries(sample_preference):
     assert plan_1["attempt"] == 1
     assert plan_1["relaxed_mode"] is False
 
-    # Attempt 2 -> relaxed_mode remains False until Work Item 3 progressive relaxation
+    # Attempt 2 -> relaxed_mode remains False until progressive relaxation
     plan_2 = planner.create_plan(sample_preference, attempt=2)
     assert plan_2["attempt"] == 2
     assert plan_2["relaxed_mode"] is False
 
-    # Attempt 3 -> relaxed_mode remains False until Work Item 3 progressive relaxation
+    # Attempt 3 -> relaxed_mode remains False until progressive relaxation
     plan_3 = planner.create_plan(sample_preference, attempt=3)
     assert plan_3["attempt"] == 3
     assert plan_3["relaxed_mode"] is False
 
-    # Clamping: attempt > 3 is clamped to 3
+    # Attempt 4 -> relaxed_mode remains False for initial plans
+    plan_4 = planner.create_plan(sample_preference, attempt=4)
+    assert plan_4["attempt"] == 4
+    assert plan_4["relaxed_mode"] is False
+
+    # Clamping: attempt > 4 is clamped to 4 (1 initial + up to 3 replans)
     plan_high = planner.create_plan(sample_preference, attempt=99)
-    assert plan_high["attempt"] == 3
+    assert plan_high["attempt"] == 4
 
     # Clamping: attempt < 1 is clamped to 1
     plan_low = planner.create_plan(sample_preference, attempt=0)
@@ -578,8 +583,8 @@ def test_evaluation_missing_or_incomplete_listing_fields(sample_preference):
 
 def test_evaluation_diagnosis_and_replanning_recommendation_bounds(sample_preference):
     """
-    Verifies that replanning is recommended on attempts 1 and 2,
-    but stops after attempt 3 per execution budget limits.
+    Verifies that replanning is recommended on attempts 1, 2, and 3,
+    but stops after attempt 4 per ExecutionBudget limits (3 replan rounds).
     """
     planner = SearchPlanner()
 
@@ -591,10 +596,14 @@ def test_evaluation_diagnosis_and_replanning_recommendation_bounds(sample_prefer
     res_att2 = planner.evaluate_observations([], sample_preference, attempt=2)
     assert res_att2.recommend_replan is True
 
-    # Attempt 3 -> recommend_replan is False (limit reached)
+    # Attempt 3 -> recommend_replan is True (final replan to produce attempt 4)
     res_att3 = planner.evaluate_observations([], sample_preference, attempt=3)
-    assert res_att3.recommend_replan is False
-    assert "limit of 3 rounds reached" in res_att3.diagnosis or "budget cap reached" in res_att3.diagnosis
+    assert res_att3.recommend_replan is True
+
+    # Attempt 4 -> recommend_replan is False (budget limit reached: 3/3 replans completed)
+    res_att4 = planner.evaluate_observations([], sample_preference, attempt=4)
+    assert res_att4.recommend_replan is False
+    assert "budget limit reached" in res_att4.diagnosis or "budget cap reached" in res_att4.diagnosis
 
     # Singular evaluate_observation alias
     single_res = planner.evaluate_observation(None, sample_preference, attempt=1)
@@ -643,3 +652,503 @@ def test_evaluation_type_validation_errors(sample_preference):
 
     with pytest.raises(TypeError, match="Expected profile to be an instance of Profile schema or None"):
         planner.evaluate_observations([], sample_preference, profile="invalid_profile")
+
+
+# =====================================================================
+# Work Item 3: Progressive Constraint Relaxation Tests
+# =====================================================================
+
+def test_replan_four_attempt_progression(sample_preference, sample_profile):
+    """
+    Verifies the four-attempt lifecycle:
+    Attempt 1 (initial) -> Attempt 2 (replan 1) -> Attempt 3 (replan 2) -> Attempt 4 (replan 3) -> None (attempt 5 blocked).
+    """
+    planner = SearchPlanner()
+    pref_with_stipend_opt_in = Preference(
+        profile_id="p_prog",
+        target_roles=["Machine Learning Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.REMOTE, WorkMode.HYBRID],
+        min_stipend=30000.0,
+        constraints={"flexible_stipend": True},
+    )
+
+    # 1. Attempt 1: Initial search plan
+    plan_1 = planner.create_plan(pref_with_stipend_opt_in, profile=sample_profile, attempt=1)
+    assert plan_1["attempt"] == 1
+    assert plan_1["relaxed_mode"] is False
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    # 2. Attempt 1 -> Attempt 2 (Replan 1: Location relaxation)
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_with_stipend_opt_in, sample_profile)
+    assert plan_2 is not None
+    assert plan_2["attempt"] == 2
+    assert plan_2["relaxed_mode"] is True
+    assert plan_2["filters"]["locations"] == []
+
+    # 3. Attempt 2 -> Attempt 3 (Replan 2: Domain relaxation)
+    plan_3 = planner.replan(plan_2, eval_insufficient, pref_with_stipend_opt_in, sample_profile)
+    assert plan_3 is not None
+    assert plan_3["attempt"] == 3
+    assert plan_3["relaxed_mode"] is True
+    assert any("domain" in n.lower() for n in plan_3["relaxation_notes"])
+
+    # 4. Attempt 3 -> Attempt 4 (Replan 3: Stipend relaxation & query broadening)
+    plan_4 = planner.replan(plan_3, eval_insufficient, pref_with_stipend_opt_in, sample_profile)
+    assert plan_4 is not None
+    assert plan_4["attempt"] == 4
+    assert plan_4["relaxed_mode"] is True
+    assert plan_4["filters"]["min_stipend"] is None
+
+    # 5. Attempt 4 -> None (Execution budget cap reached: 3 replans max, Attempt 5 blocked)
+    plan_5 = planner.replan(plan_4, eval_insufficient, pref_with_stipend_opt_in, sample_profile)
+    assert plan_5 is None
+
+
+def test_replan_stipend_preserved_by_default(sample_preference, sample_profile):
+    """
+    Correction 2: Verifies that min_stipend is NEVER relaxed by default when constraints={}.
+    An explicit user minimum stipend must not be silently weakened.
+    """
+    planner = SearchPlanner()
+    pref_default = Preference(
+        profile_id="p_default",
+        target_roles=["Machine Learning Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.REMOTE],
+        min_stipend=35000.0,
+        constraints={},  # Default empty constraints
+    )
+
+    plan_1 = planner.create_plan(pref_default, profile=sample_profile, attempt=1)
+    assert plan_1["filters"]["min_stipend"] == 35000.0
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    # Attempt 2
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_default, sample_profile)
+    assert plan_2 is not None
+    assert plan_2["filters"]["min_stipend"] == 35000.0
+
+    # Attempt 3
+    plan_3 = planner.replan(plan_2, eval_insufficient, pref_default, sample_profile)
+    assert plan_3 is not None
+    assert plan_3["filters"]["min_stipend"] == 35000.0
+
+    # Attempt 4
+    plan_4 = planner.replan(plan_3, eval_insufficient, pref_default, sample_profile)
+    assert plan_4 is not None
+    assert plan_4["filters"]["min_stipend"] == 35000.0
+
+
+def test_replan_stipend_preserved_when_opt_in_false(sample_preference, sample_profile):
+    """
+    Correction 2: Verifies that min_stipend remains preserved when flexible_stipend=False
+    or allow_unpaid=False.
+    """
+    planner = SearchPlanner()
+    pref_explicit_false = Preference(
+        profile_id="p_false",
+        target_roles=["Machine Learning Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.REMOTE],
+        min_stipend=40000.0,
+        constraints={"flexible_stipend": False, "allow_unpaid": False},
+    )
+
+    plan_1 = planner.create_plan(pref_explicit_false, profile=sample_profile, attempt=1)
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_explicit_false, sample_profile)
+    plan_3 = planner.replan(plan_2, eval_insufficient, pref_explicit_false, sample_profile)
+    plan_4 = planner.replan(plan_3, eval_insufficient, pref_explicit_false, sample_profile)
+
+    assert plan_4 is not None
+    assert plan_4["filters"]["min_stipend"] == 40000.0
+
+
+def test_replan_stipend_relaxed_when_flexible_stipend_true(sample_preference, sample_profile):
+    """
+    Correction 2: Verifies stipend relaxation occurs when flexible_stipend=True.
+    """
+    planner = SearchPlanner()
+    pref_flexible = Preference(
+        profile_id="p_flex",
+        target_roles=["Machine Learning Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.REMOTE],
+        min_stipend=30000.0,
+        constraints={"flexible_stipend": True},
+    )
+
+    plan_1 = planner.create_plan(pref_flexible, profile=sample_profile, attempt=1)
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_flexible, sample_profile)
+    plan_3 = planner.replan(plan_2, eval_insufficient, pref_flexible, sample_profile)
+
+    # Stipend is relaxed on attempt 3 or 4 when permitted
+    plan_4 = planner.replan(plan_3, eval_insufficient, pref_flexible, sample_profile)
+    assert plan_4 is not None
+    assert plan_4["filters"]["min_stipend"] is None
+    assert any("flexible stipend" in n for n in plan_4["relaxation_notes"])
+
+
+def test_replan_stipend_relaxed_when_allow_unpaid_true(sample_preference, sample_profile):
+    """
+    Correction 2: Verifies stipend relaxation occurs when allow_unpaid=True.
+    """
+    planner = SearchPlanner()
+    pref_unpaid = Preference(
+        profile_id="p_unpaid",
+        target_roles=["Backend Intern"],
+        domains=[],
+        locations=[],
+        work_modes=[WorkMode.REMOTE],
+        min_stipend=25000.0,
+        constraints={"allow_unpaid": True},
+    )
+
+    plan_1 = planner.create_plan(pref_unpaid, profile=sample_profile, attempt=1)
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_unpaid, sample_profile)
+    assert plan_2 is not None
+    assert plan_2["filters"]["min_stipend"] is None
+    assert any("flexible stipend" in n for n in plan_2["relaxation_notes"])
+
+
+def test_replan_location_relaxation_attempt_2(sample_preference, sample_profile):
+    """Verifies that attempt 2 relaxes strict location filters when results are insufficient."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=1,
+        relevant_observations=1,
+        reasons=["Too few relevant listings found (1 found, minimum required is 3)."],
+        diagnosis="Observations are insufficient. Re-planning recommended.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, sample_preference, sample_profile)
+
+    assert plan_2 is not None
+    assert plan_2["attempt"] == 2
+    assert plan_2["relaxed_mode"] is True
+    # Strict city locations filter relaxed from ['Bangalore', 'Remote'] to []
+    assert plan_2["filters"]["locations"] == []
+    # Work modes remain strictly preserved
+    assert plan_2["filters"]["work_modes"] == ["remote", "hybrid"]
+    assert any("Relaxed strict location filter" in note for note in plan_2["relaxation_notes"])
+
+
+def test_replan_domain_relaxation_attempt_3(sample_preference, sample_profile):
+    """Verifies that attempt 3 relaxes domain constraints while preserving target roles."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results retrieved. Re-planning recommended.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, sample_preference, sample_profile)
+    assert plan_2 is not None
+    assert plan_2["attempt"] == 2
+
+    # Now evaluate attempt 2 as still insufficient
+    eval_insufficient_2 = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=1,
+        relevant_observations=0,
+        reasons=["No listings matched preferred domains: FinTech, Healthcare."],
+        diagnosis="Domain mismatch diagnosed. Re-planning recommended.",
+        recommend_replan=True,
+    )
+
+    plan_3 = planner.replan(plan_2, eval_insufficient_2, sample_preference, sample_profile)
+
+    assert plan_3 is not None
+    assert plan_3["attempt"] == 3
+    assert plan_3["relaxed_mode"] is True
+    assert any("Relaxed domain constraint" in note for note in plan_3["relaxation_notes"])
+    # Default stipend is preserved since flexible_stipend is not opted in
+    assert plan_3["filters"]["min_stipend"] == sample_preference.min_stipend
+    # Target roles preserved in search queries
+    assert any("Machine Learning Intern" in q for q in plan_3["search_queries"])
+
+
+def test_replan_no_relaxation_when_results_sufficient(sample_preference, sample_profile):
+    """Verifies that no new plan is generated when observations are already sufficient."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+
+    eval_sufficient = ObservationEvaluation(
+        is_sufficient=True,
+        total_observations=5,
+        relevant_observations=4,
+        reasons=[],
+        diagnosis="Observations are sufficient: 4 of 5 listings match user preferences.",
+        recommend_replan=False,
+    )
+
+    result = planner.replan(plan_1, eval_sufficient, sample_preference, sample_profile)
+    assert result is None
+
+
+def test_replan_no_relaxation_after_maximum_attempt(sample_preference, sample_profile):
+    """Verifies that no plan is generated beyond attempt 4 per Section 10.6 execution bounds."""
+    planner = SearchPlanner()
+    plan_4 = planner.create_plan(sample_preference, profile=sample_profile, attempt=4)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="Execution budget cap reached (4/4 attempts, 3/3 replan rounds completed).",
+        recommend_replan=False,
+    )
+
+    result = planner.replan(plan_4, eval_insufficient, sample_preference, sample_profile)
+    assert result is None
+
+
+def test_replan_preserves_target_roles(sample_preference, sample_profile):
+    """Verifies that target roles are strictly preserved across all progressive relaxation rounds."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, sample_preference, sample_profile)
+    assert plan_2 is not None
+    assert "Machine Learning Intern" in plan_2["search_queries"]
+    assert sample_preference.target_roles == ["Machine Learning Intern"]
+
+    plan_3 = planner.replan(plan_2, eval_insufficient, sample_preference, sample_profile)
+    assert plan_3 is not None
+    assert any("Machine Learning Intern" in q for q in plan_3["search_queries"])
+    assert sample_preference.target_roles == ["Machine Learning Intern"]
+
+    plan_4 = planner.replan(plan_3, eval_insufficient, sample_preference, sample_profile)
+    assert plan_4 is not None
+    assert any("Machine Learning Intern" in q for q in plan_4["search_queries"])
+    assert sample_preference.target_roles == ["Machine Learning Intern"]
+
+
+def test_replan_no_mutation_of_inputs(sample_preference, sample_profile):
+    """Verifies that replan never mutates the original plan, preference, or profile objects."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+
+    import copy
+    plan_1_copy = copy.deepcopy(plan_1)
+    pref_copy = sample_preference.model_dump()
+    prof_copy = sample_profile.model_dump()
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, sample_preference, sample_profile)
+
+    assert plan_2 is not None
+    assert plan_1 == plan_1_copy
+    assert sample_preference.model_dump() == pref_copy
+    assert sample_profile.model_dump() == prof_copy
+
+
+def test_replan_relaxation_notes_accuracy(sample_preference, sample_profile):
+    """Verifies that relaxation notes accurately describe each progressive adjustment."""
+    planner = SearchPlanner()
+    pref_with_opt_in = Preference(
+        profile_id="p_opt",
+        target_roles=["Machine Learning Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.REMOTE],
+        min_stipend=30000.0,
+        constraints={"flexible_stipend": True},
+    )
+
+    plan_1 = planner.create_plan(pref_with_opt_in, profile=sample_profile, attempt=1)
+    assert plan_1["relaxation_notes"] == []
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, pref_with_opt_in, sample_profile)
+    assert len(plan_2["relaxation_notes"]) == 1
+    assert "Attempt 2: Relaxed strict location filter" in plan_2["relaxation_notes"][0]
+
+    plan_3 = planner.replan(plan_2, eval_insufficient, pref_with_opt_in, sample_profile)
+    assert len(plan_3["relaxation_notes"]) >= 2
+    assert any("Attempt 3: Relaxed domain constraint" in n for n in plan_3["relaxation_notes"])
+
+    plan_4 = planner.replan(plan_3, eval_insufficient, pref_with_opt_in, sample_profile)
+    assert len(plan_4["relaxation_notes"]) >= 3
+    assert any("Attempt 4: Relaxed minimum stipend filter" in n for n in plan_4["relaxation_notes"])
+
+
+def test_replan_relaxed_mode_flag_behavior(sample_preference, sample_profile):
+    """Verifies that relaxed_mode is False on initial plans and True only after actual relaxation."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+    assert plan_1["relaxed_mode"] is False
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.replan(plan_1, eval_insufficient, sample_preference, sample_profile)
+    assert plan_2["relaxed_mode"] is True
+
+
+def test_replan_no_duplicate_plans_when_relaxation_impossible():
+    """Verifies that no plan is generated if all candidate constraints are explicitly hard."""
+    planner = SearchPlanner()
+    strict_pref = Preference(
+        profile_id="p_strict",
+        target_roles=["Backend Intern"],
+        domains=["FinTech"],
+        locations=["Bangalore"],
+        work_modes=[WorkMode.HYBRID],
+        min_stipend=50000.0,
+        constraints={
+            "hard_location": True,
+            "hard_domain": True,
+            "hard_stipend": True,
+        },
+    )
+
+    plan_1 = planner.create_plan(strict_pref, attempt=1)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    result = planner.replan(plan_1, eval_insufficient, strict_pref)
+    assert result is None
+
+
+def test_replan_with_search_plan_instance_and_alias(sample_preference, sample_profile):
+    """Verifies that replan accepts SearchPlan model instances and supports relax_plan alias."""
+    planner = SearchPlanner()
+    plan_dict = planner.create_plan(sample_preference, profile=sample_profile, attempt=1)
+    plan_model = SearchPlan(**plan_dict)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results were retrieved."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    plan_2 = planner.relax_plan(plan_model, eval_insufficient, sample_preference, sample_profile)
+    assert plan_2 is not None
+    assert plan_2["attempt"] == 2
+    assert plan_2["relaxed_mode"] is True
+
+
+def test_replan_type_validation_errors(sample_preference):
+    """Verifies that invalid argument types raise TypeError."""
+    planner = SearchPlanner()
+    plan_1 = planner.create_plan(sample_preference, attempt=1)
+
+    eval_insufficient = ObservationEvaluation(
+        is_sufficient=False,
+        total_observations=0,
+        relevant_observations=0,
+        reasons=["No search results."],
+        diagnosis="No results.",
+        recommend_replan=True,
+    )
+
+    with pytest.raises(TypeError, match="Expected evaluation to be an instance of ObservationEvaluation"):
+        planner.replan(plan_1, "not_an_evaluation", sample_preference)
+
+    with pytest.raises(TypeError, match="Expected preference to be an instance of Preference"):
+        planner.replan(plan_1, eval_insufficient, "not_a_preference")
+
+    with pytest.raises(TypeError, match="Expected profile to be an instance of Profile or None"):
+        planner.replan(plan_1, eval_insufficient, sample_preference, profile="invalid_profile")
+
+    with pytest.raises(TypeError, match="Expected current_plan to be SearchPlan or dict"):
+        planner.replan(12345, eval_insufficient, sample_preference)

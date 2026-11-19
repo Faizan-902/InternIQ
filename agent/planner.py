@@ -9,6 +9,7 @@ Implements Section 5.2 (Node 2: Plan), Section 7.1, and FR-03:
 - Constructs structured search plans with location, work mode, and stipend constraints.
 """
 
+import copy
 import re
 import uuid
 from typing import List, Dict, Any, Optional, Union
@@ -28,7 +29,7 @@ class SearchPlan(BaseModel):
     Structured search plan consumed by data ingestion fetchers and agent loop.
     """
     plan_id: str = Field(..., description="Unique search plan identifier")
-    attempt: int = Field(1, ge=1, le=3, description="Plan iteration attempt (1 to 3)")
+    attempt: int = Field(1, ge=1, le=4, description="Plan iteration attempt (1 to 4: 1 initial + up to 3 replans)")
     target_sources: List[str] = Field(
         default_factory=lambda: ["greenhouse", "lever", "manual_csv"],
         description="Target job boards and authorized connectors",
@@ -258,12 +259,12 @@ class SearchPlanner:
                 f"Expected profile to be an instance of Profile schema or None, got {type(profile).__name__}"
             )
 
-        # Safe attempt clamping to bounds [1, 3] per Section 10.6 execution limits
+        # Safe attempt clamping to bounds [1, 4] (1 initial + up to 3 replans) per Section 10.6
         try:
             int_attempt = int(attempt)
         except (ValueError, TypeError):
             int_attempt = 1
-        clamped_attempt = max(1, min(int_attempt, 3))
+        clamped_attempt = max(1, min(int_attempt, 4))
 
         # Safe extraction of roles, domains, and skills
         raw_roles = [r.strip() for r in (preference.target_roles or []) if r and r.strip()]
@@ -583,7 +584,7 @@ class SearchPlanner:
             int_attempt = int(attempt)
         except (ValueError, TypeError):
             int_attempt = 1
-        clamped_attempt = max(1, min(int_attempt, 3))
+        clamped_attempt = max(1, min(int_attempt, 4))
 
         raw_items: List[Any]
         if observations is None:
@@ -596,12 +597,12 @@ class SearchPlanner:
         total_observations = len(raw_items)
 
         if total_observations == 0:
-            budget_exhausted = (clamped_attempt >= 3)
+            budget_exhausted = (clamped_attempt >= 4)
             reasons = ["No search results were retrieved from authorized sources."]
             if budget_exhausted:
                 diagnosis = (
                     f"No listings found across target sources for attempt {clamped_attempt}. "
-                    "Re-planning limit of 3 rounds reached; stopping search iterations."
+                    "Re-planning budget limit reached (4/4 attempts, 3/3 replan rounds completed); stopping search iterations."
                 )
                 recommend_replan = False
             else:
@@ -665,7 +666,7 @@ class SearchPlanner:
 
         usable_count = total_observations - unusable_count
         is_sufficient = (relevant_observations >= min_sufficient_count)
-        budget_exhausted = (clamped_attempt >= 3)
+        budget_exhausted = (clamped_attempt >= 4)
 
         reasons: List[str] = []
         if unusable_count > 0:
@@ -701,7 +702,7 @@ class SearchPlanner:
             if budget_exhausted:
                 diagnosis = (
                     f"Observations are insufficient ({relevant_observations}/{total_observations} relevant), but execution "
-                    f"budget cap reached ({clamped_attempt}/3 rounds completed). Proceeding with available results."
+                    f"budget cap reached ({clamped_attempt}/4 attempts, 3/3 replan rounds completed). Proceeding with available results."
                 )
             else:
                 diagnosis = (
@@ -740,3 +741,241 @@ class SearchPlanner:
         else:
             obs_list = [observation]
         return self.evaluate_observations(obs_list, preference, profile, **kwargs)
+
+    def replan(
+        self,
+        current_plan: Union[SearchPlan, Dict[str, Any]],
+        evaluation: ObservationEvaluation,
+        preference: Preference,
+        profile: Optional[Profile] = None,
+        **kwargs: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generates a progressively broader search plan when observation evaluation
+        diagnoses insufficient opportunities, respecting candidate preferences and
+        Section 10.6 execution limits.
+
+        Parameters:
+        - current_plan: Prior SearchPlan model instance or dictionary.
+        - evaluation: Prior ObservationEvaluation result.
+        - preference: Candidate target preference model (never mutated).
+        - profile: Optional candidate profile model (never mutated).
+
+        Returns:
+        - A new SearchPlan dictionary with relaxed search criteria and incremented attempt,
+          or None if observations are already sufficient, replanning limit is exhausted,
+          or no safe relaxation is possible.
+        """
+        if not isinstance(evaluation, ObservationEvaluation):
+            raise TypeError(
+                f"Expected evaluation to be an instance of ObservationEvaluation, got {type(evaluation).__name__}"
+            )
+        if not isinstance(preference, Preference):
+            raise TypeError(
+                f"Expected preference to be an instance of Preference, got {type(preference).__name__}"
+            )
+        if profile is not None and not isinstance(profile, Profile):
+            raise TypeError(
+                f"Expected profile to be an instance of Profile or None, got {type(profile).__name__}"
+            )
+
+        if isinstance(current_plan, SearchPlan):
+            plan_dict = current_plan.model_dump()
+            current_attempt = current_plan.attempt
+        elif isinstance(current_plan, dict):
+            plan_dict = dict(current_plan)
+            try:
+                current_attempt = int(plan_dict.get("attempt", 1))
+            except (ValueError, TypeError):
+                current_attempt = 1
+        else:
+            raise TypeError(
+                f"Expected current_plan to be SearchPlan or dict, got {type(current_plan).__name__}"
+            )
+
+        # 1. If observations are already sufficient, do not generate another plan
+        if evaluation.is_sufficient:
+            return None
+
+        # 2. If evaluation recommends no further replanning, do not generate another plan
+        if not evaluation.recommend_replan:
+            return None
+
+        # 3. Maximum attempt limit: cannot exceed 4 total attempts (1 initial + 3 replans)
+        if current_attempt >= 4:
+            return None
+
+        next_attempt = current_attempt + 1
+        if next_attempt > 4:
+            return None
+
+        new_filters = copy.deepcopy(plan_dict.get("filters", {}))
+        new_target_sources = list(plan_dict.get("target_sources", self.default_sources))
+        new_relaxation_notes = list(plan_dict.get("relaxation_notes", []))
+
+        constraints = preference.constraints or {}
+        is_hard_location = bool(constraints.get("hard_location") or constraints.get("strict_location"))
+        is_hard_domain = bool(constraints.get("hard_domain") or constraints.get("strict_domain"))
+        # Stipend relaxation is strictly opt-in: default is to preserve min_stipend
+        stipend_relaxation_permitted = (
+            constraints.get("flexible_stipend") is True or
+            constraints.get("allow_unpaid") is True
+        )
+
+        # Relaxation order across 3 re-planning rounds (Attempts 2, 3, 4):
+        # Attempt 2 (Replan 1): Broaden locations (while retaining work-mode restrictions)
+        # Attempt 3 (Replan 2): Broaden domains (while retaining target roles)
+        # Attempt 4 (Replan 3): Broaden queries & stipend (if explicitly permitted)
+        if next_attempt == 2:
+            # Step 1: Broaden locations
+            if new_filters.get("locations") and not is_hard_location:
+                old_locs = list(new_filters["locations"])
+                new_filters["locations"] = []
+                work_mode_desc = [
+                    wm.value if hasattr(wm, "value") else str(wm)
+                    for wm in (preference.work_modes or [])
+                ]
+                new_relaxation_notes.append(
+                    f"Attempt 2: Relaxed strict location filter from {old_locs} to open location "
+                    f"compatible with work modes ({work_mode_desc})."
+                )
+            else:
+                # If location could not be relaxed, try domain or stipend (if permitted)
+                if preference.domains and not is_hard_domain and not any("domain" in n.lower() for n in new_relaxation_notes):
+                    new_relaxation_notes.append(
+                        f"Attempt 2: Relaxed domain constraint from {list(preference.domains)} "
+                        f"to broader tech opportunities for target roles."
+                    )
+                elif new_filters.get("min_stipend") is not None and stipend_relaxation_permitted:
+                    old_stipend = new_filters["min_stipend"]
+                    new_filters["min_stipend"] = None
+                    new_relaxation_notes.append(
+                        f"Attempt 2: Relaxed minimum stipend filter from {old_stipend} to None (user permitted flexible stipend)."
+                    )
+
+        elif next_attempt == 3:
+            # Step 2: Broaden domains while retaining target roles
+            domain_relaxed_now = False
+            if preference.domains and not is_hard_domain and not any("domain" in n.lower() for n in new_relaxation_notes):
+                new_relaxation_notes.append(
+                    f"Attempt 3: Relaxed domain constraint from {list(preference.domains)} "
+                    f"to all industry domains for target roles."
+                )
+                domain_relaxed_now = True
+
+            # Step 2b: If location was not yet relaxed and is not hard
+            loc_relaxed_now = False
+            if new_filters.get("locations") and not is_hard_location:
+                old_locs = list(new_filters["locations"])
+                new_filters["locations"] = []
+                new_relaxation_notes.append(
+                    f"Attempt 3: Relaxed strict location filter from {old_locs} to open location."
+                )
+                loc_relaxed_now = True
+
+            # Step 2c: If neither domain nor location could be relaxed in this step or previously,
+            # and stipend relaxation is explicitly permitted, relax stipend
+            if not domain_relaxed_now and not loc_relaxed_now:
+                if new_filters.get("min_stipend") is not None and stipend_relaxation_permitted and not any("stipend" in n.lower() for n in new_relaxation_notes):
+                    old_stipend = new_filters["min_stipend"]
+                    new_filters["min_stipend"] = None
+                    new_relaxation_notes.append(
+                        f"Attempt 3: Relaxed minimum stipend filter from {old_stipend} to None (user permitted flexible stipend)."
+                    )
+
+        elif next_attempt == 4:
+            # Step 3 (Final Replan): Broaden stipend (if permitted) and expand query variations
+            if new_filters.get("min_stipend") is not None and stipend_relaxation_permitted and not any("stipend" in n.lower() for n in new_relaxation_notes):
+                old_stipend = new_filters["min_stipend"]
+                new_filters["min_stipend"] = None
+                new_relaxation_notes.append(
+                    f"Attempt 4: Relaxed minimum stipend filter from {old_stipend} to None (user permitted flexible stipend)."
+                )
+
+            if preference.domains and not is_hard_domain and not any("domain" in n.lower() for n in new_relaxation_notes):
+                new_relaxation_notes.append(
+                    f"Attempt 4: Relaxed domain constraint from {list(preference.domains)} "
+                    f"to all industry domains for target roles."
+                )
+
+            if new_filters.get("locations") and not is_hard_location:
+                old_locs = list(new_filters["locations"])
+                new_filters["locations"] = []
+                new_relaxation_notes.append(
+                    f"Attempt 4: Relaxed strict location filter from {old_locs} to open location."
+                )
+
+            new_relaxation_notes.append(
+                "Attempt 4: Expanded search query variations for target roles across all authorized sources."
+            )
+
+        # Generate queries for the relaxed plan
+        # Target roles are ALWAYS strictly preserved from user preference
+        raw_roles = [r.strip() for r in (preference.target_roles or []) if r and r.strip()]
+        roles = raw_roles or ["Software Engineering Intern"]
+
+        # Check if domain relaxation occurred
+        domain_relaxed = any("domain" in n.lower() for n in new_relaxation_notes)
+        if domain_relaxed:
+            active_domains = []
+        else:
+            active_domains = [d.strip() for d in (preference.domains or []) if d and d.strip()]
+
+        skills = [s.strip() for s in (profile.skills or []) if s and s.strip()] if profile else []
+
+        if domain_relaxed:
+            pref_for_kw = Preference(
+                profile_id=preference.profile_id,
+                target_roles=roles,
+                domains=[],
+                locations=new_filters.get("locations", []),
+                work_modes=preference.work_modes,
+                min_stipend=new_filters.get("min_stipend"),
+            )
+            query_keywords = self._extract_keywords(pref_for_kw, profile)
+            search_queries = self._generate_queries(roles, [], skills)
+            for role in roles:
+                for modifier in ["Internship", "Junior"]:
+                    mod_q = f"{role} {modifier}" if modifier.lower() not in role.lower() else role
+                    if mod_q not in search_queries:
+                        search_queries.append(mod_q)
+            if next_attempt == 4:
+                for role in roles:
+                    for modifier in ["Associate", "Trainee"]:
+                        mod_q = f"{modifier} {role}" if modifier.lower() not in role.lower() else role
+                        if mod_q not in search_queries:
+                            search_queries.append(mod_q)
+        else:
+            query_keywords = self._extract_keywords(preference, profile)
+            search_queries = self._generate_queries(roles, active_domains, skills)
+            if next_attempt == 4:
+                for role in roles:
+                    for modifier in ["Internship", "Junior"]:
+                        mod_q = f"{role} {modifier}" if modifier.lower() not in role.lower() else role
+                        if mod_q not in search_queries:
+                            search_queries.append(mod_q)
+
+        # Check whether any actual relaxation occurred
+        num_new_notes = len(new_relaxation_notes) - len(plan_dict.get("relaxation_notes", []))
+        filters_changed = (new_filters != plan_dict.get("filters", {}))
+        queries_changed = (set(search_queries) != set(plan_dict.get("search_queries", [])))
+        actual_relaxation_occurred = (num_new_notes > 0 or filters_changed or queries_changed)
+
+        if not actual_relaxation_occurred:
+            return None
+
+        new_plan_id = f"plan_{uuid.uuid4().hex[:8]}_att{next_attempt}"
+        new_plan = SearchPlan(
+            plan_id=new_plan_id,
+            attempt=next_attempt,
+            target_sources=new_target_sources,
+            query_keywords=query_keywords,
+            search_queries=search_queries,
+            filters=new_filters,
+            relaxed_mode=True,
+            relaxation_notes=new_relaxation_notes,
+        )
+
+        return new_plan.model_dump()
+
+    relax_plan = replan
