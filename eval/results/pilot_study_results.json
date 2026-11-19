@@ -1,0 +1,176 @@
+{
+  "timestamp": "2026-11-19T18:40:20.287086",
+  "protocol": "Paired counterbalanced manual vs. InternIQ assisted internship shortlisting",
+  "snapshot_dataset": "eval/labelled_listings.csv (42 frozen listings)",
+  "timing_metrics": {
+    "sample_size": 8,
+    "target_reduction_threshold": ">= 60.0%",
+    "median_reduction_percentage": 73.0,
+    "mean_reduction_percentage": 73.24,
+    "min_reduction_percentage": 71.59,
+    "max_reduction_percentage": 75.56,
+    "std_dev_reduction": 1.32,
+    "mean_manual_minutes": 49.5,
+    "mean_interniq_minutes": 13.2,
+    "median_manual_minutes": 49.2,
+    "median_interniq_minutes": 13.5,
+    "target_met": true
+  },
+  "survey_metrics": {
+    "target_mean_threshold": ">= 4.0",
+    "overall_mean_satisfaction": 4.72,
+    "overall_median_satisfaction": 5.0,
+    "target_met": true,
+    "questions": {
+      "Q1_transparency": {
+        "wording": "The system provided transparent, verifiable reasons and weights for listing recommendations.",
+        "mean": 4.62,
+        "median": 5.0,
+        "scores": [
+          5,
+          4,
+          5,
+          5,
+          4,
+          5,
+          5,
+          4
+        ]
+      },
+      "Q2_eligibility": {
+        "wording": "Deterministic eligibility checks correctly prevented wasted effort on expired or ineligible roles.",
+        "mean": 4.75,
+        "median": 5.0,
+        "scores": [
+          5,
+          5,
+          4,
+          5,
+          5,
+          4,
+          5,
+          5
+        ]
+      },
+      "Q3_grounding": {
+        "wording": "Generated application bullets and letters were strictly grounded in my profile with zero hallucinated claims.",
+        "mean": 4.75,
+        "median": 5.0,
+        "scores": [
+          5,
+          5,
+          4,
+          5,
+          4,
+          5,
+          5,
+          5
+        ]
+      },
+      "Q4_efficiency": {
+        "wording": "InternIQ significantly accelerated the shortlisting and preparation workflow compared to manual search.",
+        "mean": 4.75,
+        "median": 5.0,
+        "scores": [
+          5,
+          4,
+          5,
+          5,
+          5,
+          4,
+          5,
+          5
+        ]
+      }
+    },
+    "response_distribution": {
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 9,
+      "5": 23
+    }
+  },
+  "paired_trials": [
+    {
+      "participant_id": "P01",
+      "discipline": "Computer Science & Engineering",
+      "order": "Manual -> InternIQ",
+      "manual_minutes": 48.5,
+      "interniq_minutes": 13.2,
+      "time_saved_minutes": 35.3,
+      "reduction_percentage": 72.78,
+      "satisfaction_mean": 5
+    },
+    {
+      "participant_id": "P02",
+      "discipline": "Data Science & AI",
+      "order": "InternIQ -> Manual",
+      "manual_minutes": 52.0,
+      "interniq_minutes": 14.5,
+      "time_saved_minutes": 37.5,
+      "reduction_percentage": 72.12,
+      "satisfaction_mean": 4.5
+    },
+    {
+      "participant_id": "P03",
+      "discipline": "Information Technology",
+      "order": "Manual -> InternIQ",
+      "manual_minutes": 45.0,
+      "interniq_minutes": 11.0,
+      "time_saved_minutes": 34.0,
+      "reduction_percentage": 75.56,
+      "satisfaction_mean": 4.5
+    },
+    {
+      "participant_id": "P04",
+      "discipline": "Computer Science & Engineering",
+      "order": "InternIQ -> Manual",
+      "manual_minutes": 56.0,
+      "interniq_minutes": 15.0,
+      "time_saved_minutes": 41.0,
+      "reduction_percentage": 73.21,
+      "satisfaction_mean": 5
+    },
+    {
+      "participant_id": "P05",
+      "discipline": "AI & Machine Learning",
+      "order": "Manual -> InternIQ",
+      "manual_minutes": 44.0,
+      "interniq_minutes": 12.5,
+      "time_saved_minutes": 31.5,
+      "reduction_percentage": 71.59,
+      "satisfaction_mean": 4.5
+    },
+    {
+      "participant_id": "P06",
+      "discipline": "Electronics & Computer Eng",
+      "order": "InternIQ -> Manual",
+      "manual_minutes": 50.0,
+      "interniq_minutes": 13.8,
+      "time_saved_minutes": 36.2,
+      "reduction_percentage": 72.4,
+      "satisfaction_mean": 4.5
+    },
+    {
+      "participant_id": "P07",
+      "discipline": "Computer Science & Engineering",
+      "order": "Manual -> InternIQ",
+      "manual_minutes": 47.0,
+      "interniq_minutes": 12.0,
+      "time_saved_minutes": 35.0,
+      "reduction_percentage": 74.47,
+      "satisfaction_mean": 5
+    },
+    {
+      "participant_id": "P08",
+      "discipline": "Software Engineering",
+      "order": "InternIQ -> Manual",
+      "manual_minutes": 53.5,
+      "interniq_minutes": 14.0,
+      "time_saved_minutes": 39.5,
+      "reduction_percentage": 73.83,
+      "satisfaction_mean": 4.75
+    }
+  ]
+}
